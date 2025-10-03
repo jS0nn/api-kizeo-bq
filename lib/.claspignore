@@ -1,0 +1,11 @@
+node_modules/**
+package*.json
+tsconfig.json
+webpack.config.js
+rollup.config.js
+.eslintrc*
+.prettier*
+.git/**
+.vscode/**
+README.md
+.DS_Store
