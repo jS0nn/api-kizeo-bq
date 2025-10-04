@@ -63,24 +63,40 @@ function enregistrementUI(formulaire) {
   let user;
   try {
     user = Session.getActiveUser().getEmail();
-    console.log("enregistrementUI")
-    Logger.log(`enregistrementUI du formulaire: ${formulaire.nom} / ${formulaire.id} / ${user}`);
-    
-    if (!formulaire.id) {
-      const ui = SpreadsheetApp.getUi();
+    const ui = SpreadsheetApp.getUi();
+    const actionName = (formulaire.action || '').trim();
+    const formulaireData = { nom: formulaire.nom, id: formulaire.id };
+
+    Logger.log(`enregistrementUI du formulaire: ${formulaireData.nom} / ${formulaireData.id} / ${user}`);
+
+    if (!formulaireData.id) {
       ui.alert('Avertissement', 'Veuillez choisir un formulaire.', ui.ButtonSet.OK);
       Logger.log('enregistrementUI: Avertissement - Veuillez choisir un formulaire.');
       return;
     }
 
-    const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-    let action=SpreadsheetApp.getActiveSpreadsheet().getName()
-    setScriptProperties('enCours')
-    //console.log(formulaire);
-    libKizeo.gestionFeuilles(spreadsheetBdD, formulaire)   
-    setScriptProperties('termine')
+    if (!actionName) {
+      ui.alert('Avertissement', "Veuillez saisir un nom d'action.", ui.ButtonSet.OK);
+      Logger.log('enregistrementUI: Avertissement - Nom action manquant.');
+      return;
+    }
 
-    main() //une fois préparé on lance main
+    if (actionName.length > 30) {
+      ui.alert('Avertissement', "Le nom de l'action doit contenir 30 caractères au maximum.", ui.ButtonSet.OK);
+      Logger.log('enregistrementUI: Avertissement - Nom action trop long.');
+      return;
+    }
+
+    const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
+    if (spreadsheetBdD.getName() !== actionName) {
+      spreadsheetBdD.rename(actionName);
+    }
+
+    setScriptProperties('enCours');
+    libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
+    setScriptProperties('termine');
+
+    main();
   } catch (e) {
     libKizeo.handleException('enregistrementUI', e, { formulaire: formulaire, user: user });
   }

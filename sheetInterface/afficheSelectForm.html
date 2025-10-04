@@ -51,6 +51,11 @@
        <br>
         <form id="formulaireVariables"> 
           <div id="divCheckboxes"></div>
+          <div class="mb-3">
+            <label for="actionName" class="form-label">Nom de l'action</label>
+            <input type="text" class="form-control" id="actionName" name="actionName" maxlength="30" placeholder="Nom court (<= 30 caractères)" required>
+            <div class="form-text">Le classeur sera renommé avec cette valeur pour les appels Kizeo.</div>
+          </div>
           <div class="d-flex justify-content-center mb-4">
             <button type="submit" id="boutonEnvoiFormulaireVariables">Ajouter à la configuration</button>                
           </div>  
@@ -125,10 +130,21 @@
         var formulaireID = selectForm.options[selectForm.selectedIndex].value;
         console.log(formulaire + " / " + formulaireID);
         
+        const actionInput = document.getElementById('actionName');
+        const actionName = actionInput.value.trim();
+
+        if (!actionName) {
+          actionInput.classList.add('is-invalid');
+          actionInput.focus();
+          return;
+        }
+
+        actionInput.classList.remove('is-invalid');
+
         // Désactiver le bouton pour éviter les clics multiples
         document.getElementById("boutonEnvoiFormulaireVariables").disabled = true;
         
-        var formulaireObj = {id: formulaireID, nom: formulaire};
+        var formulaireObj = {id: formulaireID, nom: formulaire, action: actionName};
         google.script.run
           .withSuccessHandler(function() {
             google.script.host.close();
