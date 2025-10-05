@@ -90,18 +90,21 @@ function enregistrementUI(formulaire) {
 
     const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
     setScriptProperties('enCours');
-    libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
-    const actionCode = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaireData.id);
-    libKizeo.upsertFormConfig(spreadsheetBdD, {
-      form_id: formulaireData.id,
-      form_name: formulaireData.nom,
-      bq_alias: aliasName,
-      action: actionCode
-    });
-    setScriptProperties('termine');
+    try {
+      libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
+      const actionCode = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaireData.id);
+      libKizeo.upsertFormConfig(spreadsheetBdD, {
+        form_id: formulaireData.id,
+        form_name: formulaireData.nom,
+        bq_alias: aliasName,
+        action: actionCode
+      });
 
-    console.log(`Enregistrement UI -> action=${actionCode}, alias=${aliasName}`);
-    main();
+      console.log(`Enregistrement UI -> action=${actionCode}, alias=${aliasName}`);
+      main();
+    } finally {
+      setScriptProperties('termine');
+    }
   } catch (e) {
     libKizeo.handleException('enregistrementUI', e, { formulaire: formulaire, user: user });
   }
@@ -130,46 +133,31 @@ function reInitOngletActif() {
 
   try {
     const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-    const activeSheet = spreadsheetBdD.getActiveSheet();
-    const nomOngletActif = activeSheet.getName();
-    const nomOngletActifTab = nomOngletActif.split(' || ');
-
-    if (nomOngletActifTab.length !== 2) {
+    const context = resolveFormulaireContext(spreadsheetBdD);
+    if (!context) {
       ui.alert(
         'Avertissement',
-        'Seuls les onglets des formulaires (Nom || ID) peuvent être réinitialisés.',
+        'Aucun formulaire configuré pour ce classeur.',
         ui.ButtonSet.OK
       );
-      Logger.log(`reInitOngletActif: Onglet incompatible -> ${nomOngletActif}`);
+      Logger.log('reInitOngletActif: formulaire introuvable.');
       return;
     }
 
-    const formulaire = {
-      nom: nomOngletActifTab[0].trim(),
-      id: (nomOngletActifTab[1] || '').trim()
-    };
-
-    if (!formulaire.id) {
-      ui.alert(
-        'Avertissement',
-        'Impossible d’identifier le formulaire pour cet onglet.',
-        ui.ButtonSet.OK
-      );
-      Logger.log('reInitOngletActif: ID formulaire manquant.');
-      return;
-    }
-
+    const formulaire = context.formulaire;
     const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaire.id);
     setScriptProperties('enCours');
-    libKizeo.upsertFormConfig(spreadsheetBdD, {
-      form_id: formulaire.id,
-      form_name: formulaire.nom,
-      action: action
-    });
-    libKizeo.processData(spreadsheetBdD, formulaire, action, nbFormulairesACharger);
-    setScriptProperties('termine');
+    try {
+      libKizeo.upsertFormConfig(spreadsheetBdD, {
+        form_id: formulaire.id,
+        form_name: formulaire.nom,
+        action: action
+      });
+      libKizeo.processData(spreadsheetBdD, formulaire, action, nbFormulairesACharger);
+    } finally {
+      setScriptProperties('termine');
+    }
   } catch (e) {
-    setScriptProperties('termine');
     libKizeo.handleException('reInitOngletActif', e);
   }
 }

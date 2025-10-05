@@ -123,38 +123,117 @@ function exportMedias(mediaList, targetFolderId) {
 
   mediaList.forEach((m) => {
     try {
-      if (!m.id) {
-        console.log(`ID manquant pour le média ${m.name}`);
+      const displayName = m.name || m.fileName || `media_${m.dataId || 'unknown'}`;
+
+      const candidateId = m.driveFileId || '';
+      if (!candidateId && !m.id) {
+        console.log(`ID manquant pour le média ${displayName}`);
         return;
       }
 
-      // Extraire l'ID du fichier de la formule HYPERLINK
-      let fileId = m.id;
-      if (fileId.includes('id=')) {
-        fileId = fileId.split('id=')[1].split('"')[0];
+      // Extraire l'ID du fichier de la formule HYPERLINK si aucun ID dédié n'est présent
+      let fileId = candidateId;
+      if (!fileId && typeof m.id === 'string' && m.id.includes('id=')) {
+        fileId = m.id.split('id=')[1].split('"')[0];
       }
 
-      const alreadyThere = mediaFolder.getFilesByName(m.name);
+      if (!fileId && typeof m.driveUrl === 'string' && m.driveUrl.includes('id=')) {
+        fileId = m.driveUrl.split('id=')[1].split('&')[0];
+      }
+
+      if (!fileId) {
+        console.log(`Impossible de déterminer l'ID Drive pour ${displayName}`);
+        return;
+      }
+
+      const alreadyThere = mediaFolder.getFilesByName(displayName);
       if (alreadyThere.hasNext()) return;
 
       const file = DriveApp.getFileById(fileId);
-      file.makeCopy(m.name, mediaFolder);
+      file.makeCopy(displayName, mediaFolder);
       
     } catch (e) {
       // Utiliser m.id au lieu de fileId qui pourrait ne pas être défini en cas d'erreur précoce
-      console.log(`Erreur copie média ${m.name} : ${e.message}\nID original: ${m.id}`);
+      console.log(`Erreur copie média ${m.name || m.fileName} : ${e.message}\nID original: ${m.driveFileId || m.id}`);
     }
   });
 }
 
+function readFormConfigFromSheet(sheet) {
+  if (!sheet) return {};
+  try {
+    if (typeof libKizeo !== 'undefined' && typeof libKizeo.readConfigFromSheet === 'function') {
+      const config = libKizeo.readConfigFromSheet(sheet);
+      if (config) return config;
+    }
+  } catch (err) {
+    console.log(`readFormConfigFromSheet fallback: ${err && err.message ? err.message : err}`);
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return {};
+  }
+  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  const config = {};
+  values.forEach((row) => {
+    const key = row[0];
+    if (!key) return;
+    config[String(key).trim()] = row[1];
+  });
+  return config;
+}
+
+function resolveFormulaireContext(spreadsheetBdD) {
+  const sheets = spreadsheetBdD.getSheets();
+  if (!sheets.length) return null;
+
+  const evaluateSheet = function (sheet) {
+    if (!sheet) return null;
+    const sheetName = sheet.getName() || '';
+    const [nameFromTitle, idFromTitle] = sheetName.split(' || ');
+    const config = readFormConfigFromSheet(sheet) || {};
+    const rawId = config.form_id || idFromTitle || '';
+    const formId = rawId.toString().trim();
+    if (!formId) return null;
+    const rawName = config.form_name || nameFromTitle || '';
+    const formName = rawName.toString().trim() || `Form ${formId}`;
+    return {
+      sheet,
+      formulaire: {
+        nom: formName,
+        id: formId
+      }
+    };
+  };
+
+  const activeCandidate = evaluateSheet(spreadsheetBdD.getActiveSheet());
+  if (activeCandidate) {
+    return activeCandidate;
+  }
+
+  for (let i = 0; i < sheets.length; i++) {
+    const candidate = evaluateSheet(sheets[i]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 /**
- * Met à jour les données pour chaque onglet de feuille.
- * Si de nouvelles réponses sont trouvées pour le formulaire correspondant à un onglet, les données sont enregistrées.
- * Sinon, un message de log est affiché.
+ * Met à jour les données pour le formulaire configuré dans l'onglet unique du classeur.
+ * Les réponses sont ingérées dans BigQuery et les exports Drive (PDF/médias) sont déclenchés si requis.
  */
 function main() {
   const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-  const onglets = spreadsheetBdD.getSheets();
+  const context = resolveFormulaireContext(spreadsheetBdD);
+
+  if (!context) {
+    console.log('main: aucun formulaire configuré pour ce classeur.');
+    return;
+  }
 
   if (getEtatExecution() === 'enCours') {
     console.log('Exécution précédente toujours en cours.');
@@ -165,85 +244,86 @@ function main() {
   setScriptProperties('enCours');
 
   try {
-    for (const onglet of onglets) {
-      const ongletName = onglet.getName();
-      const [formNom, formId, extra] = ongletName.split(' || ');
-      if (extra || !formId) continue; // hors nomenclature
+    const formulaire = context.formulaire;
+    const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaire.id);
 
-      const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formId);
+    // ---------- Récupération des nouvelles données pour les exports ----------
+    const unreadResp = libKizeo.requeteAPIDonnees(
+      'GET',
+      `/forms/${formulaire.id}/data/unread/${action}/${nbFormulairesACharger}?includeupdated`
+    );
 
-      // ---------- Récupération des nouvelles données ----------
-      const unreadResp = libKizeo.requeteAPIDonnees(
-        'GET',
-        `/forms/${formId}/data/unread/${action}/${nbFormulairesACharger}?includeupdated`
-      );
-      if (!unreadResp || unreadResp.data.status !== 'ok') {
-        console.log(`Erreur API unread : ${unreadResp?.data?.status}`);
-        continue;
-      }
-      const nouvellesDonnees = unreadResp.data.data;
-      // Toujours préparer BigQuery / feuilles, même si aucune donnée à écrire.
-      const processResult = libKizeo.processData(
-        spreadsheetBdD,
-        { nom: formNom, id: formId },
-        action,
-        nbFormulairesACharger
-      );
-      const mediasIndexes = processResult?.medias || []; // [{dataId,name,id}, …]
-
-      if (!nouvellesDonnees.length) {
-        Logger.log('Pas de nouveaux enregistrements');
-        continue;
-      }
-
-      // ---------- Boucle par nouvel eneregistrement ----------
-      nouvellesDonnees.forEach((data) => {
-        const dataFields = data || {};
-        const dataId = data._id;
-
-        /* localisation de l'export */
-        const driveUrlEntry = Object.entries(dataFields).find(([k, v]) => k.includes('driveexport') && v);
-        const driveUrl = driveUrlEntry ? driveUrlEntry[1] : null;
-
-        if (!driveUrl) {
-          // Pas de driveexport → on arrête ici cet iteration de forEach
-          return;
-        }
-        console.log(`Un export est configuré pour ${dataId}, l'adresse est ${driveUrl}`)
-        if (typeof driveUrl !== 'string' || !driveUrl.includes('drive.google.com')) return;
-        const folderIdMatch =
-          driveUrl.match(/drive\/u\/\d+\/folders\/([^?\s/]+)/) || driveUrl.match(/drive\/folders\/([^?\s/]+)/);
-        if (!folderIdMatch) return;
-        const folderId = folderIdMatch[1];
-
-        /* sous‑répertoire optionnel */
-        const subFolderName = Object.entries(dataFields).find(([k, v]) => k.includes('sousrepertoireexport') && v)?.[1] || null;
-        const targetFolderId = subFolderName ? getOrCreateSubFolder(folderId, subFolderName) : folderId;
-
-        /* type d'export */
-        const typeExport = (Object.entries(dataFields).find(([k, v]) => k.includes('typeexport') && v)?.[1] || 'pdf').toString().toLowerCase();  //si aucun champ typeexport n'est trouvé on traite comme pdf
-        console.log(`Type d'export ${typeExport} pour ${dataId}`)
-        /* actions */
-        if (['pdf', 'pdfmedia'].includes(typeExport)) {
-          console.log("Export type PDF pour "+dataId)
-          try {
-            const pdfResp = libKizeo.requeteAPIDonnees('GET', `/forms/${formId}/data/${dataId}/pdf`);
-            exportPdfBlob(formNom, dataId, pdfResp.data, targetFolderId);
-          } catch (e) {
-            Logger.log(`Erreur export PDF : ${e.message}`);
-          }
-        }
-        if (['media', 'pdfmedia'].includes(typeExport)) {
-          console.log("Export type media pour "+dataId)
-          const mediasPourRecord = mediasIndexes.filter((m) => m.dataId === dataId);
-          exportMedias(mediasPourRecord, targetFolderId);
-        }
-      });
+    if (!unreadResp || unreadResp.data.status !== 'ok') {
+      console.log(`Erreur API unread : ${unreadResp?.data?.status}`);
+      return;
     }
-    setScriptProperties('termine');
+
+    const nouvellesDonnees = Array.isArray(unreadResp.data.data) ? unreadResp.data.data : [];
+
+    // ---------- Préparation BigQuery et ingestion ----------
+    const processResult = libKizeo.processData(
+      spreadsheetBdD,
+      formulaire,
+      action,
+      nbFormulairesACharger
+    );
+    const mediasIndexes = processResult?.medias || [];
+
+    if (!nouvellesDonnees.length) {
+      Logger.log('Pas de nouveaux enregistrements');
+      return;
+    }
+
+    // ---------- Boucle par nouvel enregistrement ----------
+    nouvellesDonnees.forEach((data) => {
+      const dataFields = data || {};
+      const dataId = data._id;
+
+      /* localisation de l'export */
+      const driveUrlEntry = Object.entries(dataFields).find(([k, v]) => k.includes('driveexport') && v);
+      const driveUrl = driveUrlEntry ? driveUrlEntry[1] : null;
+
+      if (!driveUrl) {
+        // Pas de driveexport → on arrête ici cet iteration de forEach
+        return;
+      }
+      console.log(`Un export est configuré pour ${dataId}, l'adresse est ${driveUrl}`);
+      if (typeof driveUrl !== 'string' || !driveUrl.includes('drive.google.com')) return;
+      const folderIdMatch =
+        driveUrl.match(/drive\/u\/\d+\/folders\/([^?\s/]+)/) || driveUrl.match(/drive\/folders\/([^?\s/]+)/);
+      if (!folderIdMatch) return;
+      const folderId = folderIdMatch[1];
+
+      /* sous‑répertoire optionnel */
+      const subFolderName = Object.entries(dataFields).find(([k, v]) => k.includes('sousrepertoireexport') && v)?.[1] || null;
+      const targetFolderId = subFolderName ? getOrCreateSubFolder(folderId, subFolderName) : folderId;
+
+      /* type d'export */
+      const typeExport =
+        (Object.entries(dataFields).find(([k, v]) => k.includes('typeexport') && v)?.[1] || 'pdf')
+          .toString()
+          .toLowerCase(); // si aucun champ typeexport n'est trouvé on traite comme pdf
+      console.log(`Type d'export ${typeExport} pour ${dataId}`);
+      /* actions */
+      if (['pdf', 'pdfmedia'].includes(typeExport)) {
+        console.log('Export type PDF pour ' + dataId);
+        try {
+          const pdfResp = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/pdf`);
+          exportPdfBlob(formulaire.nom, dataId, pdfResp.data, targetFolderId);
+        } catch (e) {
+          Logger.log(`Erreur export PDF : ${e.message}`);
+        }
+      }
+      if (['media', 'pdfmedia'].includes(typeExport)) {
+        console.log('Export type media pour ' + dataId);
+        const mediasPourRecord = mediasIndexes.filter((m) => m.dataId === dataId);
+        exportMedias(mediasPourRecord, targetFolderId);
+      }
+    });
   } catch (e) {
-    setScriptProperties('termine');
     libKizeo.handleException('main', e);
+  } finally {
+    setScriptProperties('termine');
   }
 }
 
@@ -255,21 +335,28 @@ function main() {
  * Ensuite, la fonction onOpen est exécutée et la fonction de sélection de formulaire est chargée.
  */
 function reInit() {
-  let spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-  let sheetEnCours = spreadsheetBdD.getActiveSheet();
-  
-  var scriptProperties = PropertiesService.getScriptProperties();
-  var etatExecution = scriptProperties.getProperty('etatExecution');
-  //action : limite la portée de l'action markasread et unread à un spreadSheet : Attention si plusieurs fichiers sheet portent le meme nom !!!
-  const ongletActif = sheetEnCours.getName();
-  const [, formIdActif] = ongletActif.split(' || ');
-  let action = null;
-  if (formIdActif) {
-    action = libKizeo.ensureFormActionCode(spreadsheetBdD, formIdActif);
+  const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
+  const context = resolveFormulaireContext(spreadsheetBdD);
+  const sheetEnCours = context ? context.sheet : spreadsheetBdD.getActiveSheet();
+  const ui = SpreadsheetApp.getUi();
+
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const etatExecution = scriptProperties.getProperty('etatExecution');
+
+  const formulaireEnCours = context ? context.formulaire : null;
+  if (!formulaireEnCours || !formulaireEnCours.id) {
+    ui.alert(
+      'Avertissement',
+      'Impossible d’identifier le formulaire actif pour ce classeur.',
+      ui.ButtonSet.OK
+    );
+    Logger.log('reInit: formulaire introuvable, opération annulée.');
+    return;
   }
 
-  let ui = SpreadsheetApp.getUi();
-  let responseReInit = ui.alert('Avertissement', 'Souhaitez vous réinitialiser totalement le sheet?', ui.ButtonSet.OK_CANCEL);
+  const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaireEnCours.id);
+
+  const responseReInit = ui.alert('Avertissement', 'Souhaitez vous réinitialiser totalement le sheet?', ui.ButtonSet.OK_CANCEL);
   if (responseReInit === ui.Button.OK) {
     if (etatExecution === "enCours") {
       let forceReInit = ui.alert('Avertissement', 'Une exécution est en cours, souhaitez-vous forcer la réinitialisation?', ui.ButtonSet.OK_CANCEL);
@@ -278,10 +365,16 @@ function reInit() {
       }
     }
 
-    if (action) {
-      libKizeo.marquerReponseNonLues(sheetEnCours, action);
+    if (action && typeof libKizeo.marquerReponseNonLues === 'function') {
+      try {
+        libKizeo.marquerReponseNonLues(sheetEnCours, action);
+      } catch (err) {
+        console.log(
+          `reInit: marquerReponseNonLues indisponible (${err && err.message ? err.message : err})`
+        );
+      }
     } else {
-      console.log('reInit: action introuvable, marquage des réponses non lues ignoré.');
+      console.log('reInit: marquerReponseNonLues non exécutée (données non stockées en Sheet).');
     }
     
     sheetEnCours.setName('Reinit');
