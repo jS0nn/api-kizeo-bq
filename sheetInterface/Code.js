@@ -36,15 +36,13 @@
 let nbFormulairesACharger=30;
 
 function onOpen() {
-  afficheMenu()
-  let ui = SpreadsheetApp.getUi()
-  let response = ui.alert('Avertissement', 'Ne pas modifier les noms des onglets.\n Le nom du fichier sheet sert à identifer les données non lues : ⚠⚠⚠⚠ MAX 30 caractères ⚠⚠⚠⚠', ui.ButtonSet.OK)
-  let spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet()
-  let nbCaracteresFeuille=spreadsheetBdD.getName().length;
-  if(nbCaracteresFeuille>29){
-    ui.alert("Attention le nom du fichier Sheet depasse 30 caracteres !\n Le nombre actuel de caracteres est : "+nbCaracteresFeuille, ui.ButtonSet.OK)
-  }
-  console.log("Fin de onOpen")
+  afficheMenu();
+  console.log("Fin de onOpen");
+  const props = PropertiesService.getDocumentProperties();
+  const projectId = props.getProperty('BQ_PROJECT_ID');
+  const dataset = props.getProperty('BQ_DATASET');
+  const location = props.getProperty('BQ_LOCATION');
+  console.log(`ScriptProperties BQ -> project=${projectId || 'NULL'}, dataset=${dataset || 'NULL'}, location=${location || 'NULL'}`);
 }
 
 /**
@@ -59,6 +57,26 @@ function setScriptProperties(etat){
 
 function getEtatExecution() {
   return PropertiesService.getScriptProperties().getProperty('etatExecution');
+}
+
+function initBigQueryConfigFromSheet() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const defaults = libKizeo.initBigQueryConfig();
+    const refreshedProps = PropertiesService.getDocumentProperties();
+    refreshedProps.setProperties({
+      BQ_PROJECT_ID: defaults.projectId,
+      BQ_DATASET: defaults.datasetId,
+      BQ_LOCATION: defaults.location || ''
+    }, true);
+    const finalProject = refreshedProps.getProperty('BQ_PROJECT_ID');
+    const finalDataset = refreshedProps.getProperty('BQ_DATASET');
+    const finalLocation = refreshedProps.getProperty('BQ_LOCATION');
+    Logger.log(`initBigQueryConfigFromSheet -> project=${finalProject}, dataset=${finalDataset}, location=${finalLocation}`);
+    ui.alert(`Configuration BigQuery initialisée :\nProjet=${finalProject}\nDataset=${finalDataset}\nLocation=${finalLocation || 'default'}`);
+  } catch (e) {
+    libKizeo.handleException('initBigQueryConfigFromSheet', e);
+  }
 }
 
 // ----------------------
@@ -137,7 +155,6 @@ function exportMedias(mediaList, targetFolderId) {
 function main() {
   const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
   const onglets = spreadsheetBdD.getSheets();
-  const action = spreadsheetBdD.getName(); // limite portée markAsRead/unread
 
   if (getEtatExecution() === 'enCours') {
     console.log('Exécution précédente toujours en cours.');
@@ -153,6 +170,8 @@ function main() {
       const [formNom, formId, extra] = ongletName.split(' || ');
       if (extra || !formId) continue; // hors nomenclature
 
+      const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formId);
+
       // ---------- Récupération des nouvelles données ----------
       const unreadResp = libKizeo.requeteAPIDonnees(
         'GET',
@@ -163,12 +182,7 @@ function main() {
         continue;
       }
       const nouvellesDonnees = unreadResp.data.data;
-      if (!nouvellesDonnees.length) {
-        Logger.log('Pas de nouveaux enregistrements');
-        continue;
-      }
-
-      // ---------- Écriture dans la feuille + récupération médias ----------
+      // Toujours préparer BigQuery / feuilles, même si aucune donnée à écrire.
       const processResult = libKizeo.processData(
         spreadsheetBdD,
         { nom: formNom, id: formId },
@@ -176,6 +190,11 @@ function main() {
         nbFormulairesACharger
       );
       const mediasIndexes = processResult?.medias || []; // [{dataId,name,id}, …]
+
+      if (!nouvellesDonnees.length) {
+        Logger.log('Pas de nouveaux enregistrements');
+        continue;
+      }
 
       // ---------- Boucle par nouvel eneregistrement ----------
       nouvellesDonnees.forEach((data) => {
@@ -242,7 +261,12 @@ function reInit() {
   var scriptProperties = PropertiesService.getScriptProperties();
   var etatExecution = scriptProperties.getProperty('etatExecution');
   //action : limite la portée de l'action markasread et unread à un spreadSheet : Attention si plusieurs fichiers sheet portent le meme nom !!!
-  let action=SpreadsheetApp.getActiveSpreadsheet().getName()
+  const ongletActif = sheetEnCours.getName();
+  const [, formIdActif] = ongletActif.split(' || ');
+  let action = null;
+  if (formIdActif) {
+    action = libKizeo.ensureFormActionCode(spreadsheetBdD, formIdActif);
+  }
 
   let ui = SpreadsheetApp.getUi();
   let responseReInit = ui.alert('Avertissement', 'Souhaitez vous réinitialiser totalement le sheet?', ui.ButtonSet.OK_CANCEL);
@@ -254,7 +278,11 @@ function reInit() {
       }
     }
 
-    libKizeo.marquerReponseNonLues(sheetEnCours,action);
+    if (action) {
+      libKizeo.marquerReponseNonLues(sheetEnCours, action);
+    } else {
+      console.log('reInit: action introuvable, marquage des réponses non lues ignoré.');
+    }
     
     sheetEnCours.setName('Reinit');
 
@@ -283,4 +311,3 @@ function reInit() {
     askForTimeInterval();
   }
 }
-

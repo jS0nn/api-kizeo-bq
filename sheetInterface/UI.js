@@ -8,6 +8,7 @@ function afficheMenu() {
     const ui = SpreadsheetApp.getUi();
     const menu = ui.createMenu('Configuration Kizeo')
       .addItem('Selectionner le formulaire Kizeo', 'chargeSelectForm')
+      .addItem('Initialiser BigQuery', 'initBigQueryConfigFromSheet')
       .addItem('Actualiser le sheet', 'majSheet')
       .addItem('Réinitialiser le sheet', 'reInitOngletActif')
       .addToUi();
@@ -64,7 +65,7 @@ function enregistrementUI(formulaire) {
   try {
     user = Session.getActiveUser().getEmail();
     const ui = SpreadsheetApp.getUi();
-    const actionName = (formulaire.action || '').trim();
+    const aliasName = (formulaire.alias || '').trim();
     const formulaireData = { nom: formulaire.nom, id: formulaire.id };
 
     Logger.log(`enregistrementUI du formulaire: ${formulaireData.nom} / ${formulaireData.id} / ${user}`);
@@ -75,27 +76,31 @@ function enregistrementUI(formulaire) {
       return;
     }
 
-    if (!actionName) {
-      ui.alert('Avertissement', "Veuillez saisir un nom d'action.", ui.ButtonSet.OK);
-      Logger.log('enregistrementUI: Avertissement - Nom action manquant.');
+    if (!aliasName) {
+      ui.alert('Avertissement', "Veuillez saisir un alias BigQuery.", ui.ButtonSet.OK);
+      Logger.log('enregistrementUI: Avertissement - Alias BigQuery manquant.');
       return;
     }
 
-    if (actionName.length > 30) {
-      ui.alert('Avertissement', "Le nom de l'action doit contenir 30 caractères au maximum.", ui.ButtonSet.OK);
-      Logger.log('enregistrementUI: Avertissement - Nom action trop long.');
+    if (aliasName.length > 64) {
+      ui.alert('Avertissement', "L'alias BigQuery doit contenir 64 caractères au maximum.", ui.ButtonSet.OK);
+      Logger.log('enregistrementUI: Avertissement - Alias BigQuery trop long.');
       return;
     }
 
     const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-    if (spreadsheetBdD.getName() !== actionName) {
-      spreadsheetBdD.rename(actionName);
-    }
-
     setScriptProperties('enCours');
     libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
+    const actionCode = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaireData.id);
+    libKizeo.upsertFormConfig(spreadsheetBdD, {
+      form_id: formulaireData.id,
+      form_name: formulaireData.nom,
+      bq_alias: aliasName,
+      action: actionCode
+    });
     setScriptProperties('termine');
 
+    console.log(`Enregistrement UI -> action=${actionCode}, alias=${aliasName}`);
     main();
   } catch (e) {
     libKizeo.handleException('enregistrementUI', e, { formulaire: formulaire, user: user });
@@ -111,13 +116,16 @@ function enregistrementUI(formulaire) {
  * puis lance la mise à jour des données du formulaire correspondant.
  */
 function reInitOngletActif() {
-  var scriptProperties = PropertiesService.getScriptProperties();
-  
-  var scriptProperties = PropertiesService.getScriptProperties();
-  var etatExecution = scriptProperties.getProperty('etatExecution');
-  if(etatExecution==="enCours"){
-      ui.alert('Avertissement', 'Une exécution est en cours, veuillez patienter et relancer la réinitialisation.',ui.ButtonSet.OK);
-      throw new Error('Reinit : Exécution en cours');
+  const ui = SpreadsheetApp.getUi();
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const etatExecution = scriptProperties.getProperty('etatExecution');
+  if (etatExecution === 'enCours') {
+    ui.alert(
+      'Avertissement',
+      'Une exécution est en cours, veuillez patienter et relancer la réinitialisation.',
+      ui.ButtonSet.OK
+    );
+    throw new Error('Reinit : Exécution en cours');
   }
 
   try {
@@ -126,33 +134,42 @@ function reInitOngletActif() {
     const nomOngletActif = activeSheet.getName();
     const nomOngletActifTab = nomOngletActif.split(' || ');
 
-    if (nomOngletActifTab.length > 2) {
-      const ui = SpreadsheetApp.getUi();
-      ui.alert('Avertissement', 'Seuls les onglets des Formulaires peuvent être réinitialisés.', ui.ButtonSet.OK);
-      Logger.log('reInitOngletActif: Avertissement - Seuls les onglets des Formulaires peuvent être réinitialisés.');
-    } else {
-      const range = activeSheet.getDataRange();
-      range.clearContent();
-      const formulaire = {
-        nom: nomOngletActifTab[0],
-        id: nomOngletActifTab[1]
-      };
-
-      const onglets = spreadsheetBdD.getSheets();
-      // Parcourir tous les onglets et mettre à jour leurs données
-      for (let i = 0; i < onglets.length; i++) {
-        const onglet = onglets[i].getName();
-        const nomOngletTab = onglet.split(' || ');
-        if (nomOngletTab.length > 2 && nomOngletActifTab[1] === nomOngletTab[1]) {
-          // Il s'agit d'un tableau du formulaire actif
-          Logger.log('Effacer le tableau');
-          spreadsheetBdD.getSheetByName(onglet).getDataRange().clearContent();
-        }
-      }
-      libKizeo.processData(spreadsheetBdD, formulaire);
-      setScriptProperties('termine');
+    if (nomOngletActifTab.length !== 2) {
+      ui.alert(
+        'Avertissement',
+        'Seuls les onglets des formulaires (Nom || ID) peuvent être réinitialisés.',
+        ui.ButtonSet.OK
+      );
+      Logger.log(`reInitOngletActif: Onglet incompatible -> ${nomOngletActif}`);
+      return;
     }
+
+    const formulaire = {
+      nom: nomOngletActifTab[0].trim(),
+      id: (nomOngletActifTab[1] || '').trim()
+    };
+
+    if (!formulaire.id) {
+      ui.alert(
+        'Avertissement',
+        'Impossible d’identifier le formulaire pour cet onglet.',
+        ui.ButtonSet.OK
+      );
+      Logger.log('reInitOngletActif: ID formulaire manquant.');
+      return;
+    }
+
+    const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaire.id);
+    setScriptProperties('enCours');
+    libKizeo.upsertFormConfig(spreadsheetBdD, {
+      form_id: formulaire.id,
+      form_name: formulaire.nom,
+      action: action
+    });
+    libKizeo.processData(spreadsheetBdD, formulaire, action, nbFormulairesACharger);
+    setScriptProperties('termine');
   } catch (e) {
+    setScriptProperties('termine');
     libKizeo.handleException('reInitOngletActif', e);
   }
 }
