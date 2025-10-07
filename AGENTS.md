@@ -17,3 +17,6 @@ Existing history is terse; keep messages short, in the imperative, and scoped (`
 
 ## Configuration & Secrets
 The library reads ScriptProperties `BQ_PROJECT_ID`, `BQ_DATASET`, and `BQ_LOCATION`. Set them via Apps Script > Project Settings or the `PropertiesService` console before running ingestion. Never commit real keys; share them through the team vault. Keep default locations (`europe-west1`) aligned between environments and document overrides in the relevant spreadsheet tab.
+
+
+tu dois toujours retourner tes informations en francais

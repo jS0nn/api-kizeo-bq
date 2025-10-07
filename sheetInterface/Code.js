@@ -32,8 +32,116 @@
 
   */
 
-//Variable globale : nombre de formulaires chargés dans chaque requete
-let nbFormulairesACharger=30;
+// Paramétrage de la limite d'ingestion Kizeo
+const DEFAULT_KIZEO_BATCH_LIMIT = 30;
+const KIZEO_BATCH_LIMIT_PROPERTY = 'KIZEO_UNREAD_LIMIT';
+
+function sanitizeBatchLimitValue(raw) {
+  if (raw === null || raw === undefined) return null;
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return null;
+  const floored = Math.floor(numeric);
+  if (floored <= 0) return null;
+  return floored;
+}
+
+function getConfiguredBatchLimit() {
+  const docProps = PropertiesService.getDocumentProperties();
+  const raw = docProps.getProperty(KIZEO_BATCH_LIMIT_PROPERTY);
+  const sanitized = sanitizeBatchLimitValue(raw);
+  if (sanitized) {
+    if (String(sanitized) !== raw) {
+      docProps.setProperty(KIZEO_BATCH_LIMIT_PROPERTY, String(sanitized));
+    }
+    return sanitized;
+  }
+  docProps.setProperty(KIZEO_BATCH_LIMIT_PROPERTY, String(DEFAULT_KIZEO_BATCH_LIMIT));
+  return DEFAULT_KIZEO_BATCH_LIMIT;
+}
+
+// Configuration des déclencheurs temporels
+const TRIGGER_DISABLED_KEY = 'none';
+const DEFAULT_TRIGGER_FREQUENCY = 'H24';
+const TRIGGER_FREQUENCY_PROPERTY = 'TRIGGER_FREQUENCY';
+const TRIGGER_OPTIONS = {
+  M1: { type: 'M', value: 1, label: 'Toutes les minutes' },
+  M10: { type: 'M', value: 10, label: 'Toutes les 10 minutes' },
+  M30: { type: 'M', value: 30, label: 'Toutes les 30 minutes' },
+  H1: { type: 'H', value: 1, label: 'Toutes les heures' },
+  H3: { type: 'H', value: 3, label: 'Toutes les 3 heures' },
+  H6: { type: 'H', value: 6, label: 'Toutes les 6 heures' },
+  H24: { type: 'H', value: 24, label: 'Une fois par jour' },
+  WD1: { type: 'D', value: 7, label: 'Une fois par semaine' }
+};
+const CONFIG_HEADERS = [
+  'form_id',
+  'form_name',
+  'bq_alias',
+  'action',
+  'last_data_id',
+  'last_update_time',
+  'last_answer_time',
+  'last_run_at',
+  'last_row_count',
+  'trigger_frequency'
+];
+const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'bq_alias', 'action'];
+
+function sanitizeTriggerFrequency(raw) {
+  if (raw === null || raw === undefined) return DEFAULT_TRIGGER_FREQUENCY;
+  const stringValue = raw.toString().trim();
+  if (!stringValue) return DEFAULT_TRIGGER_FREQUENCY;
+  const lower = stringValue.toLowerCase();
+  if (lower === TRIGGER_DISABLED_KEY) return TRIGGER_DISABLED_KEY;
+  const upper = stringValue.toUpperCase();
+  if (TRIGGER_OPTIONS[upper]) return upper;
+  return DEFAULT_TRIGGER_FREQUENCY;
+}
+
+function getTriggerOption(key) {
+  if (!key) return null;
+  return TRIGGER_OPTIONS[key] || null;
+}
+
+function describeTriggerOption(key) {
+  if (!key) return 'inconnue';
+  if (key === TRIGGER_DISABLED_KEY) return 'désactivée';
+  const option = getTriggerOption(key);
+  if (!option) return key;
+  const unit = option.type === 'M' ? 'minute' : 'heure';
+  const plural = option.value > 1 ? 's' : '';
+  return `${option.value} ${unit}${plural}`;
+}
+
+function configureTriggerFromKey(key) {
+  if (key === TRIGGER_DISABLED_KEY) {
+    deleteAllTriggers();
+    console.log('Déclencheurs automatiques désactivés.');
+    return null;
+  }
+  const option = getTriggerOption(key);
+  if (!option) {
+    throw new Error(`Fréquence de déclencheur inconnue: ${key}`);
+  }
+  configurerDeclencheurHoraire(option.value, option.type);
+  return option;
+}
+
+function getStoredTriggerFrequency() {
+  const props = PropertiesService.getScriptProperties();
+  const rawValue = props.getProperty(TRIGGER_FREQUENCY_PROPERTY);
+  const sanitized = sanitizeTriggerFrequency(rawValue);
+  if (!rawValue || rawValue !== sanitized) {
+    props.setProperty(TRIGGER_FREQUENCY_PROPERTY, sanitized);
+  }
+  return sanitized;
+}
+
+function setStoredTriggerFrequency(key) {
+  const sanitized = sanitizeTriggerFrequency(key);
+  PropertiesService.getScriptProperties().setProperty(TRIGGER_FREQUENCY_PROPERTY, sanitized);
+  return sanitized;
+}
 
 function onOpen() {
   afficheMenu();
@@ -43,6 +151,11 @@ function onOpen() {
   const dataset = props.getProperty('BQ_DATASET');
   const location = props.getProperty('BQ_LOCATION');
   console.log(`ScriptProperties BQ -> project=${projectId || 'NULL'}, dataset=${dataset || 'NULL'}, location=${location || 'NULL'}`);
+  try {
+    getStoredTriggerFrequency();
+  } catch (e) {
+    uiHandleException('onOpen.triggerFrequency', e);
+  }
 }
 
 /**
@@ -69,6 +182,11 @@ function initBigQueryConfigFromSheet() {
       BQ_DATASET: defaults.datasetId,
       BQ_LOCATION: defaults.location || ''
     }, true);
+    try {
+      libKizeo.ensureBigQueryCoreTables();
+    } catch (ensureError) {
+      libKizeo.handleException('initBigQueryConfigFromSheet.ensureCore', ensureError);
+    }
     const finalProject = refreshedProps.getProperty('BQ_PROJECT_ID');
     const finalDataset = refreshedProps.getProperty('BQ_DATASET');
     const finalLocation = refreshedProps.getProperty('BQ_LOCATION');
@@ -184,42 +302,100 @@ function readFormConfigFromSheet(sheet) {
   return config;
 }
 
-function resolveFormulaireContext(spreadsheetBdD) {
-  const sheets = spreadsheetBdD.getSheets();
-  if (!sheets.length) return null;
-
-  const evaluateSheet = function (sheet) {
-    if (!sheet) return null;
-    const sheetName = sheet.getName() || '';
-    const [nameFromTitle, idFromTitle] = sheetName.split(' || ');
-    const config = readFormConfigFromSheet(sheet) || {};
-    const rawId = config.form_id || idFromTitle || '';
-    const formId = rawId.toString().trim();
-    if (!formId) return null;
-    const rawName = config.form_name || nameFromTitle || '';
-    const formName = rawName.toString().trim() || `Form ${formId}`;
-    return {
-      sheet,
-      formulaire: {
-        nom: formName,
-        id: formId
-      }
-    };
-  };
-
-  const activeCandidate = evaluateSheet(spreadsheetBdD.getActiveSheet());
-  if (activeCandidate) {
-    return activeCandidate;
+function writeFormConfigToSheet(sheet, config) {
+  if (!sheet) return;
+  const existingRowCount = Math.max(sheet.getLastRow() - 1, 0);
+  if (existingRowCount > 0) {
+    sheet.getRange(2, 1, existingRowCount, 2).clearContent();
   }
 
-  for (let i = 0; i < sheets.length; i++) {
-    const candidate = evaluateSheet(sheets[i]);
-    if (candidate) {
-      return candidate;
+  const entries = new Map();
+  if (config && typeof config === 'object') {
+    Object.keys(config).forEach((key) => {
+      const trimmedKey = String(key || '').trim();
+      if (!trimmedKey) return;
+      entries.set(trimmedKey, config[key]);
+    });
+  }
+
+  const rows = [];
+  CONFIG_HEADERS.forEach((header) => {
+    const value = entries.has(header) ? entries.get(header) : '';
+    rows.push([header, value]);
+    entries.delete(header);
+  });
+  entries.forEach((value, key) => {
+    rows.push([key, value]);
+  });
+
+  if (rows.length) {
+    sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+  }
+}
+
+function resolveFormulaireContext(spreadsheetBdD) {
+  const sheet = spreadsheetBdD.getActiveSheet();
+  if (!sheet) {
+    return null;
+  }
+  const config = readFormConfigFromSheet(sheet) || {};
+  return {
+    sheet,
+    config,
+    batchLimit: getConfiguredBatchLimit()
+  };
+}
+
+function createActionCode() {
+  const timestamp = new Date().getTime().toString(36);
+  const randomSegment = Utilities.getUuid().replace(/-/g, '').substring(0, 12);
+  return `act_${timestamp}${randomSegment}`.substring(0, 30);
+}
+
+function validateFormConfig(rawConfig, sheet) {
+  const config = rawConfig || {};
+  const errors = [];
+  const sanitized = {};
+
+  REQUIRED_CONFIG_KEYS.forEach((key) => {
+    const rawValue = config[key];
+    const value = rawValue !== undefined && rawValue !== null ? String(rawValue).trim() : '';
+    if (!value) {
+      errors.push({ key, message: `Champ ${key} manquant ou vide.` });
+    } else {
+      sanitized[key] = value;
+    }
+  });
+
+  if (sanitized.bq_alias && sanitized.bq_alias.length > 64) {
+    errors.push({ key: 'bq_alias', message: 'bq_alias doit contenir 64 caractères maximum.' });
+  }
+
+  return {
+    isValid: errors.length === 0,
+    config: sanitized,
+    errors,
+    sheetName: sheet ? sheet.getName() : ''
+  };
+}
+
+function notifyConfigErrors(validation) {
+  const lines = validation.errors.map((error) => `• ${error.message}`).join('\n');
+  const message = `${validation.sheetName ? validation.sheetName + '\n' : ''}${lines}`;
+
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('Configuration invalide', message, ui.ButtonSet.OK);
+  } catch (uiError) {
+    try {
+      const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+      spreadsheet.toast(message, 'Configuration invalide', 10);
+    } catch (toastError) {
+      console.log(`Impossible d'afficher une alerte UI: ${toastError}`);
     }
   }
 
-  return null;
+  console.log(`Configuration invalide détectée: ${message}`);
 }
 
 /**
@@ -235,6 +411,14 @@ function main() {
     return;
   }
 
+  const validation = validateFormConfig(context.config, context.sheet);
+  if (!validation.isValid) {
+    notifyConfigErrors(validation);
+    return;
+  }
+
+  context.config = Object.assign({}, context.config, validation.config);
+
   if (getEtatExecution() === 'enCours') {
     console.log('Exécution précédente toujours en cours.');
     console.log("En cas de blocage, réinitialisez l'état manuellement ou exécutez setScriptProperties('termine').");
@@ -244,13 +428,18 @@ function main() {
   setScriptProperties('enCours');
 
   try {
-    const formulaire = context.formulaire;
-    const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaire.id);
+    const formulaire = {
+      nom: validation.config.form_name,
+      id: validation.config.form_id,
+      alias: validation.config.bq_alias
+    };
+    const batchLimit = context.batchLimit || DEFAULT_KIZEO_BATCH_LIMIT;
+    const action = validation.config.action;
 
     // ---------- Récupération des nouvelles données pour les exports ----------
     const unreadResp = libKizeo.requeteAPIDonnees(
       'GET',
-      `/forms/${formulaire.id}/data/unread/${action}/${nbFormulairesACharger}?includeupdated`
+      `/forms/${formulaire.id}/data/unread/${action}/${batchLimit}?includeupdated`
     );
 
     if (!unreadResp || unreadResp.data.status !== 'ok') {
@@ -261,12 +450,37 @@ function main() {
     const nouvellesDonnees = Array.isArray(unreadResp.data.data) ? unreadResp.data.data : [];
 
     // ---------- Préparation BigQuery et ingestion ----------
-    const processResult = libKizeo.processData(
-      spreadsheetBdD,
-      formulaire,
-      action,
-      nbFormulairesACharger
-    );
+    const processResult = libKizeo.processData(spreadsheetBdD, formulaire, action, batchLimit);
+    if (processResult && (processResult.runTimestamp || processResult.latestRecord)) {
+      const refreshedConfig = Object.assign({}, context.config, {
+        form_id: formulaire.id,
+        form_name: formulaire.nom,
+        bq_alias: formulaire.alias
+      });
+      if (processResult.rowCount !== undefined && processResult.rowCount !== null) {
+        refreshedConfig.last_row_count = processResult.rowCount;
+      }
+      if (processResult.runTimestamp) {
+        refreshedConfig.last_run_at = processResult.runTimestamp;
+      }
+      if (processResult.latestRecord) {
+        const latest = processResult.latestRecord;
+        const latestId = latest.id || latest._id || '';
+        if (latestId) {
+          refreshedConfig.last_data_id = latestId;
+        }
+        const latestUpdate = latest.update_time || latest._update_time || '';
+        if (latestUpdate) {
+          refreshedConfig.last_update_time = latestUpdate;
+        }
+        const latestAnswer = latest.answer_time || latest._answer_time || '';
+        if (latestAnswer) {
+          refreshedConfig.last_answer_time = latestAnswer;
+        }
+      }
+      writeFormConfigToSheet(context.sheet, refreshedConfig);
+      context.config = refreshedConfig;
+    }
     const mediasIndexes = processResult?.medias || [];
 
     if (!nouvellesDonnees.length) {
@@ -334,73 +548,3 @@ function main() {
  * Les données sont marquées comme non lues sur le serveur Kizeo
  * Ensuite, la fonction onOpen est exécutée et la fonction de sélection de formulaire est chargée.
  */
-function reInit() {
-  const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-  const context = resolveFormulaireContext(spreadsheetBdD);
-  const sheetEnCours = context ? context.sheet : spreadsheetBdD.getActiveSheet();
-  const ui = SpreadsheetApp.getUi();
-
-  const scriptProperties = PropertiesService.getScriptProperties();
-  const etatExecution = scriptProperties.getProperty('etatExecution');
-
-  const formulaireEnCours = context ? context.formulaire : null;
-  if (!formulaireEnCours || !formulaireEnCours.id) {
-    ui.alert(
-      'Avertissement',
-      'Impossible d’identifier le formulaire actif pour ce classeur.',
-      ui.ButtonSet.OK
-    );
-    Logger.log('reInit: formulaire introuvable, opération annulée.');
-    return;
-  }
-
-  const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaireEnCours.id);
-
-  const responseReInit = ui.alert('Avertissement', 'Souhaitez vous réinitialiser totalement le sheet?', ui.ButtonSet.OK_CANCEL);
-  if (responseReInit === ui.Button.OK) {
-    if (etatExecution === "enCours") {
-      let forceReInit = ui.alert('Avertissement', 'Une exécution est en cours, souhaitez-vous forcer la réinitialisation?', ui.ButtonSet.OK_CANCEL);
-      if (forceReInit === ui.Button.CANCEL) {
-        throw new Error('Reinit : Exécution en cours');
-      }
-    }
-
-    if (action && typeof libKizeo.marquerReponseNonLues === 'function') {
-      try {
-        libKizeo.marquerReponseNonLues(sheetEnCours, action);
-      } catch (err) {
-        console.log(
-          `reInit: marquerReponseNonLues indisponible (${err && err.message ? err.message : err})`
-        );
-      }
-    } else {
-      console.log('reInit: marquerReponseNonLues non exécutée (données non stockées en Sheet).');
-    }
-    
-    sheetEnCours.setName('Reinit');
-
-    let range = sheetEnCours.getDataRange();
-    range.clearFormat();
-
-    deleteAllTriggers();
-    if (etatExecution === "enCours") {
-      setScriptProperties('termine');
-    }
-    
-    let onglets = spreadsheetBdD.getSheets();
-    for (let i = 0; i < onglets.length; i++) {
-      if (onglets[i].getName() !== 'Reinit') {
-        spreadsheetBdD.deleteSheet(onglets[i]);
-      } else {
-        let range = onglets[i].getDataRange();
-        range.clearContent();
-      }
-    }
-    
-    setScriptProperties('termine');
-    deleteAllTriggers();
-    
-    // Demander la configuration du déclencheur
-    askForTimeInterval();
-  }
-}

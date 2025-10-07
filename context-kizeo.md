@@ -44,11 +44,10 @@ flowchart LR
     end
 
     subgraph SheetBoundScript["Script lié au Sheet"]
-        S1[onOpen<br/>configurerDeclencheurHoraire<br/>askForTimeInterval]
-        S2[main]
+        S1[onOpen<br/>configurerDeclencheurHoraire]
+        S2[main<br/>(validation config)]
         S3[UI (HtmlService)]
-        S4[reInit / reInitOngletActif]
-        S5[exportPdfBlob & exportMedias]
+        S4[exportPdfBlob & exportMedias]
     end
 
     subgraph GoogleSheet["Google Sheets stockage"]
@@ -75,10 +74,9 @@ flowchart LR
     L3 -->|appendRow| G1
     L4 --> G2
     L5 -->|DriveApp| D1
-    S2 --> S5 --> D1
+    S2 --> S4 --> D1
     L6 --> KizeoAPI
     L7 --> G1
-    S4 --> L1
 ```
 
 ```mermaid
@@ -200,24 +198,24 @@ erDiagram
 | Déduplication & maintenance | Supprimer doublons `form_unique_id`, appliquer formats | `lib/GestionDonneesMaJ.js`, `lib/Outils.js` | `gestionDesDonneesMaJ` | — | `SpreadsheetApp` |
 | Gestion erreurs | Journaliser et notifier par mail | `lib/GestionErreurs.gs.js` | `handleException` | — | `MailApp`, `ScriptApp` |
 | UI & scheduling | Menu Sheets, modales HTML, sélection formulaire, déclencheurs | `sheetInterface/UI.js`, `sheetInterface/outils.js` | `afficheMenu`, `chargeSelectForm`, `enregistrementUI`, `configurerDeclencheurHoraire` | `onOpen`, time-based | `HtmlService`, `PropertiesService` |
-| Orchestrateur | Boucle sur formulaires, lance ingestion, exports Drive, gère verrou `etatExecution` | `sheetInterface/Code.js` | `main`, `reInit` | Déclencheur horaire configurable | `libKizeo`, `DriveApp`, `PropertiesService` |
+| Orchestrateur | Boucle sur formulaires, valide la config, lance ingestion, exports Drive, gère verrou `etatExecution` | `sheetInterface/Code.js` | `main` | Déclencheur horaire configurable | `libKizeo`, `DriveApp`, `PropertiesService` |
 
 Lien bibliothèque → script : le script lié appelle les fonctions exposées par la librairie `libKizeo` (ex. `libKizeo.processData` dans `sheetInterface/Code.js:173`, `libKizeo.handleException` dans `sheetInterface/UI.js:11`).
 
 ## Function Inventory
-**Sommaire rapide (A→Z)** : `afficheMenu`, `appendRowsToSheet`, `askForTimeInterval`, `chargeSelectForm`, `chargelisteFormulaires`, `configurerDeclencheurHoraire`, `createHyperlinkToSheet`, `createNewRows`, `deleteAllTriggers`, `emailLogger`, `enregistrementUI`, `exportMedias`, `exportPdfBlob`, `filterDuplicates`, `formatNumberAllSheets`, `getColumnIndices`, `getDataFromFields`, `getEtatExecution`, `getNewHeaders`, `getOrCreateFolder`, `getOrCreateHeaders`, `getOrCreateSheet`, `getOrCreateSubFolder`, `getValuesResponseId`, `gestionChampImage`, `gestionDesDonneesMaJ`, `gestionFeuilles`, `gestionTableaux`, `handleException`, `handleResponses`, `isNumeric`, `main`, `majListeExterne`, `majSheet`, `marquerReponseNonLues`, `onOpen`, `prepareDataForSheet`, `prepareDataToRowFormat`, `prepareSheet`, `processData`, `processIntervalChoice`, `reInit`, `reInitOngletActif`, `requeteAPIDonnees`, `saveBlobToFolder`, `saveDataToSheet`, `setScriptProperties`, `setScriptPropertiesTermine`, `writeData`.
+**Sommaire rapide (A→Z)** : `afficheMenu`, `appendRowsToSheet`, `chargeSelectForm`, `chargelisteFormulaires`, `configurerDeclencheurHoraire`, `createHyperlinkToSheet`, `createNewRows`, `deleteAllTriggers`, `emailLogger`, `enregistrementUI`, `exportMedias`, `exportPdfBlob`, `filterDuplicates`, `formatNumberAllSheets`, `getColumnIndices`, `getDataFromFields`, `getEtatExecution`, `getNewHeaders`, `getOrCreateFolder`, `getOrCreateHeaders`, `getOrCreateSheet`, `getOrCreateSubFolder`, `getValuesResponseId`, `gestionChampImage`, `gestionDesDonneesMaJ`, `gestionFeuilles`, `gestionTableaux`, `handleException`, `handleResponses`, `isNumeric`, `main`, `majListeExterne`, `majSheet`, `marquerReponseNonLues`, `onOpen`, `openTriggerFrequencyDialog`, `prepareDataForSheet`, `prepareDataToRowFormat`, `prepareSheet`, `processData`, `processIntervalChoice`, `requeteAPIDonnees`, `saveBlobToFolder`, `saveDataToSheet`, `setScriptProperties`, `setScriptPropertiesTermine`, `writeData`.
 
 | Function | File:Line | Purpose | Inputs | Outputs | Side effects | Calls | Called by | Errors/Retry |
 |---|---|---|---|---|---|---|---|---|
 | `afficheMenu()` | `sheetInterface/UI.js:6` | Ajoute le menu personnalisé « Configuration Kizeo » dans l’UI. | — | — | Crée un menu via `SpreadsheetApp.getUi()`. | `SpreadsheetApp.getUi`, `libKizeo.handleException` (si erreur) | `onOpen` | Gestion d’erreur via `handleException`. |
 | `appendRowsToSheet(sheet, rows)` | `lib/Tableaux.js:120` | Insère un lot de lignes dans un onglet de sous-formulaire. | `Sheet`, `Array<Array>` | — | Écrit via `Range.setValues`. | — | `gestionTableaux` | Erreurs propagées (pas de retry). |
-| `askForTimeInterval()` | `sheetInterface/UI.js:157` | Affiche la modale HTML de configuration des déclencheurs. | — | — | Interaction UI (`HtmlService`). | `HtmlService.createTemplateFromFile`, `libKizeo.handleException` | `reInit`, menu utilisateur | `handleException` sur erreur. |
+| `openTriggerFrequencyDialog()` | `sheetInterface/UI.js:137` | Affiche la modale HTML de configuration des déclencheurs. | — | — | Interaction UI (`HtmlService`). | `HtmlService.createTemplateFromFile`, `getStoredTriggerFrequency` | Menu utilisateur | `uiHandleException` sur erreur. |
 | `chargeSelectForm()` | `sheetInterface/UI.js:26` | Ouvre la modale de sélection de formulaire. | — | — | UI modale (HtmlService). | `HtmlService.createTemplateFromFile`, `SpreadsheetApp.getUi` | Menu « Configuration Kizeo » | `handleException`. |
 | `chargelisteFormulaires()` | `sheetInterface/UI.js:43` | Récupère et trie la liste Kizeo des formulaires. | — | `Array` de formulaires | Appel API (`UrlFetch`). | `libKizeo.requeteAPIDonnees` | `afficheSelectForm.html` via `google.script.run` | `handleException`. |
 | `configurerDeclencheurHoraire(valeur, type)` | `sheetInterface/outils.js:7` | Configure un déclencheur temporel pour `main`. | `number`, `'M'|'H'` | — | Supprime puis crée un trigger. | `deleteAllTriggers`, `ScriptApp.newTrigger` | `processIntervalChoice` | `handleException`. |
 | `createHyperlinkToSheet(spreadsheet, sheet)` | `lib/Tableaux.js:129` | Génère une formule `HYPERLINK` vers un sous-onglet. | `Spreadsheet`, `Sheet` | `string` | Aucun. | — | `gestionTableaux` | Pas de gestion spécifique. |
 | `createNewRows(tableau, idReponse, headers, formId, spreadsheet)` | `lib/Tableaux.js:93` | Formate les lignes d’un sous-formulaire (y compris médias). | `Array<Object>`, `string`, `Array<string>`, `string`, `Spreadsheet` | `Array<Array>` | Peut déclencher téléchargements médias. | `gestionChampImage`, `isNumeric` | `gestionTableaux` | Exceptions capturées en amont par `gestionTableaux`. |
-| `deleteAllTriggers()` | `sheetInterface/outils.js:32` | Supprime tous les déclencheurs du projet. | — | — | `ScriptApp.deleteTrigger`. | `ScriptApp.getProjectTriggers` | `configurerDeclencheurHoraire`, `processIntervalChoice`, `reInit` | `handleException`. |
+| `deleteAllTriggers()` | `sheetInterface/outils.js:32` | Supprime tous les déclencheurs du projet. | — | — | `ScriptApp.deleteTrigger`. | `ScriptApp.getProjectTriggers` | `configurerDeclencheurHoraire`, `processIntervalChoice` | `handleException`. |
 | `emailLogger(javascriptObject, functionName, context, fileName)` | `lib/Outils.js:51` | Envoie un JSON de debug par email. | `Object`, `string`, `Object`, `string` | — | Envoi MailApp + pièce jointe. | `MailApp.sendEmail` | Tests (`lib/zz_Tests.js`) | Pas de retry. |
 | `enregistrementUI(formulaire)` | `sheetInterface/UI.js:62` | Prépare un formulaire sélectionné et lance `main`. | `{id, nom}` | — | Met à jour ScriptProperties, appelle `libKizeo.gestionFeuilles` puis `main`. | `Session.getActiveUser`, `setScriptProperties`, `libKizeo.gestionFeuilles`, `main` | Soumission UI | `handleException`. |
 | `exportMedias(mediaList, targetFolderId)` | `sheetInterface/Code.js:100` | Copie les médias collectés dans un sous-dossier Drive `media`. | `Array`, `string` | — | Copie de fichiers Drive. | `getOrCreateSubFolder`, `DriveApp.getFileById` | `main` | Try/catch interne (log), pas de retry. |
@@ -243,19 +241,19 @@ Lien bibliothèque → script : le script lié appelle les fonctions exposées p
 | `main()` | `sheetInterface/Code.js:137` | Orchestrateur principal : boucle sur chaque onglet formulaire, déclenche ingestion, exports Drive, gère verrou `etatExecution`. | — | — | Appels API, modifications Sheet, copies Drive, updates ScriptProperties. | `getEtatExecution`, `setScriptProperties`, `libKizeo.requeteAPIDonnees`, `libKizeo.processData`, `exportPdfBlob`, `exportMedias`, `libKizeo.handleException` | Déclencheur horaire, actions UI | Try/catch global + remise `etatExecution`. |
 | `majListeExterne(formulaire, dataEnCours)` | `lib/ListesExternes.js:21` | Met à jour les listes externes Kizeo en se basant sur la dernière ligne importée. | `Object`, `Object` | `"Mise A Jour OK"` ou `null` | GET/PUT `/lists`. | `requeteAPIDonnees`, `replaceKizeoData` | `handleResponses` | `handleException`. |
 | `majSheet()` | `sheetInterface/UI.js:149` | Déclenche manuellement `main`. | — | — | — | `main` | Menu utilisateur | — |
-| `marquerReponseNonLues(sheetEnCours, action)` | `lib/DataNonLues.js:6` | Réinitialise des réponses en les marquant non lues pour une action donnée. | `Sheet`, `string` | — | POST `/markasunreadbyaction`. | `getValuesResponseId`, `requeteAPIDonnees` | `reInit`, tests | Pas de try/catch interne. |
+| `marquerReponseNonLues(sheetEnCours, action)` | `lib/DataNonLues.js:6` | Réinitialise des réponses en les marquant non lues pour une action donnée. | `Sheet`, `string` | — | POST `/markasunreadbyaction`. | `getValuesResponseId`, `requeteAPIDonnees` | Scripts de test uniquement | Pas de try/catch interne. |
 | `onOpen()` | `sheetInterface/Code.js:38` | Ajoute le menu et affiche un avertissement sur le nom du fichier. | — | — | UI alerts. | `afficheMenu`, `SpreadsheetApp.getUi` | Trigger `onOpen` | — |
 | `prepareDataForSheet(dataResponse)` | `lib/0_Data.js:151` | Construit `headers` et `values` à partir d’une réponse Kizeo. | `Object` | `[headers, values, baseData, tabFields]` ou `null` | — | `getDataFromFields`, `isNumeric` | `saveDataToSheet` | `handleException`. |
 | `prepareDataToRowFormat(spreadsheet, values, columnIndices, baseData, tabFields, formulaire, dataResponse, medias)` | `lib/0_Data.js:280` | Assemble la ligne finale pour la feuille (inclut sous-formulaires et médias). | `Spreadsheet`, `Array`, `Array`, `Array`, `Array`, `Object`, `Object`, `Array` | `Array` ou `null` | Téléchargement médias, ajout hyperliens, appelle `gestionTableaux`. | `gestionTableaux`, `gestionChampImage` | `saveDataToSheet` | `handleException`. |
 | `prepareSheet(sheetFormulaire, headers)` | `lib/0_Data.js:227` | Ajoute les entêtes si la feuille est vide. | `Sheet`, `Array` | `"sheet preparee"` ou `null` | `setValues` sur ligne 1. | — | `saveDataToSheet` | `handleException`. |
-| `processData(spreadsheetBdD, formulaire, action, nbFormulairesACharger)` | `lib/0_Data.js:12` | Point d’entrée ingestion pour un formulaire : collecte médias, délègue à `handleResponses`. | `Spreadsheet`, `Object`, `string`, `number` | `{medias: Array}` | Appels API, propagation du collecteur de médias. | `handleResponses` | `main`, `reInitOngletActif`, tests | `handleException` (retour `{medias: []}`). |
+| `processData(spreadsheetBdD, formulaire, action, nbFormulairesACharger)` | `lib/0_Data.js:12` | Point d’entrée ingestion pour un formulaire : collecte médias, délègue à `handleResponses`. | `Spreadsheet`, `Object`, `string`, `number` | `{medias: Array, latestRecord, rowCount, runTimestamp}` | Appels API, propagation du collecteur de médias. | `handleResponses` | `main`, tests | `handleException` (retour `{medias: []}`). |
 | `processIntervalChoice(choix)` | `sheetInterface/UI.js:174` | Traite le choix d’intervalle (création/suppression de trigger) depuis la modale. | `string` | — | Supprime/ajoute triggers, affiche alertes. | `deleteAllTriggers`, `configurerDeclencheurHoraire`, `chargeSelectForm` | Modale `timeIntervalSelector.html` | Pas de try/catch (erreurs surfacent). |
-| `reInit()` | `sheetInterface/Code.js:238` | Réinitialise complètement le classeur (feuilles, triggers, propriétés) après confirmation utilisateur. | — | — | Renomme/efface feuilles, supprime triggers, marque réponses non lues. | `PropertiesService`, `libKizeo.marquerReponseNonLues`, `deleteAllTriggers`, `askForTimeInterval`, `setScriptProperties` | Menu utilisateur | `throw` si exécution en cours, pas de retry. |
-| `reInitOngletActif()` | `sheetInterface/UI.js:97` | Purge l’onglet actif et les sous-tableaux associés, relance `libKizeo.processData`. | — | — | Efface cellules, appelle `processData`, remet `etatExecution`. | `SpreadsheetApp`, `libKizeo.processData`, `setScriptProperties` | Menu utilisateur | `handleException`; paramètres manquants (`action`, `nbFormulairesACharger`) → bug identifé. |
+| `reInit()` | — | (Retiré) Réinitialisation globale supprimée au profit d’une gestion manuelle de la configuration. | — | — | — | — | — |
+| `reInitOngletActif()` | — | (Retiré) Réinitialisation d’onglet supprimée ; utiliser la suppression manuelle puis la sélection de formulaire. | — | — | — | — | — |
 | `requeteAPIDonnees(methode, type, donnees)` | `lib/APIHandler.js:10` | Client HTTP générique pour Kizeo (lecture token, UrlFetch, parsing). | `string`, `string`, `Object?` | `{data, responseCode}` | Lecture token dans un Sheet externe, requêtes HTTP, parsing JSON/blob. | `UrlFetchApp.fetch`, `handleException` | Toutes fonctions API | Pas de retry, exceptions loguées. |
 | `saveBlobToFolder(blob, folderId, fileName)` | `lib/Images.js:73` | Sauvegarde un blob dans Drive (réutilise fichier existant). | `Blob`, `string`, `string` | `string` ou `null` | I/O Drive. | `DriveApp.getFolderById` | `gestionChampImage`, `exportPdfBlob` | `handleException`. |
 | `saveDataToSheet(spreadsheetBdD, dataResponse, formulaire, sheetFormulaire, medias)` | `lib/0_Data.js:111` | Écrit une réponse dans l’onglet principal et enrichit le collecteur de médias. | `Spreadsheet`, `Object`, `Object`, `Sheet`, `Array` | `{rowEnCours, existingHeaders}` ou `null` | `appendRow`, conversions, collecte médias. | `prepareDataForSheet`, `prepareSheet`, `getColumnIndices`, `prepareDataToRowFormat` | `handleResponses` | `handleException`. |
-| `setScriptProperties(etat)` | `sheetInterface/Code.js:55` | Met à jour la ScriptProperty `etatExecution`. | `string` | — | Persistant via `PropertiesService`. | — | `main`, `enregistrementUI`, `reInit` | — |
+| `setScriptProperties(etat)` | `sheetInterface/Code.js:55` | Met à jour la ScriptProperty `etatExecution`. | `string` | — | Persistant via `PropertiesService`. | — | `main`, `enregistrementUI` | — |
 | `setScriptPropertiesTermine()` | `sheetInterface/outils.js:46` | Raccourci pour remettre `etatExecution` à `termine`. | — | — | Écrit ScriptProperty. | `setScriptProperties` | Utilitaires/manuels | — |
 | `writeData(spreadsheetBdD, values, columnIndices, formulaire, dataResponse, sheetFormulaire)` | `lib/zz_archives.js:12` | Ancienne fonction d’écriture (non utilisée). | Divers | `Array` ou `null` | `appendRow` | `getRowValues` (non défini ici) | Plus référencée (archive) | `handleException`. |
 
@@ -267,14 +265,10 @@ graph TD
         afficheMenu -->|UI| chargeSelectForm
         chargeSelectForm --> enregistrementUI
         enregistrementUI --> main
-        askForTimeInterval --> processIntervalChoice
+        openTriggerFrequencyDialog --> processIntervalChoice
         processIntervalChoice --> configurerDeclencheurHoraire
         processIntervalChoice --> deleteAllTriggers
         majSheet --> main
-        reInit --> deleteAllTriggers
-        reInit --> askForTimeInterval
-        reInit --> lib_marquerReponseNonLues
-        reInitOngletActif --> lib_processData
     end
     subgraph Library
         main --> lib_requeteAPIDonnees
@@ -311,8 +305,6 @@ graph TD
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `main` | ✓ | ✓ | — | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `enregistrementUI` | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `reInit` | — | — | — | — | — | — | — | — | — | — | — | — | ✓ |
-| `reInitOngletActif` | — | ✓ | — | — | — | — | — | — | — | — | — | — | — |
 | `processData` | — | — | ✓ | — | — | — | — | — | — | — | — | — | — |
 | `handleResponses` | ✓ | — | — | ✓ | — | — | — | ✓ | ✓ | — | — | — | — |
 | `saveDataToSheet` | — | — | — | — | ✓ | — | — | — | — | — | — | — | — |
@@ -357,12 +349,13 @@ graph TD
 | Performance | Ajout ligne par ligne (`appendRow`), nettoyage doublons après chaque import (`lib/0_Data.js:78`). |
 
 ## UI & Interaction (Sheet)
-- Menu personnalisé (`afficheMenu`) avec options : sélectionner un formulaire, rafraîchir (`majSheet`), réinitialiser (`reInit` / `reInitOngletActif`).
+- Menu personnalisé (`afficheMenu`) avec options : sélectionner un formulaire, initialiser BigQuery, actualiser (`majSheet`), configurer la mise à jour automatique (plus de raccourcis cachés).
 - Modale HTML de sélection (`afficheSelectForm.html`) : chargement via `chargelisteFormulaires`, soumission `enregistrementUI` avec `google.script.run`.
 - Dialogue de configuration horaire (`timeIntervalSelector.html`) : `processIntervalChoice` configure ou supprime le déclencheur en appelant `configurerDeclencheurHoraire` / `deleteAllTriggers`.
 - Trigger `onOpen` pour installer le menu et avertir sur la longueur du nom du fichier (`sheetInterface/Code.js:40`).
 - ScriptProperty `etatExecution` pour éviter les exécutions concurrentes (`sheetInterface/Code.js:143`).
-- `reInit` supprime toutes les feuilles sauf « Reinit », réinitialise triggers et relance l’assistant d’intervalle (`sheetInterface/Code.js:238`).
+- `main` valide la configuration depuis l'onglet actif (`form_id`, `form_name`, `bq_alias`, `action`) et bloque l'exécution avec une alerte si un champ manque ou est mal typé.
+- Les métadonnées d'exécution (`last_data_id`, `last_update_time`, `last_run_at`, `last_row_count`) sont écrites via le script lié après ingestion ; la bibliothèque `libKizeo` ne réécrit plus la configuration.
 
 ## Configuration & Secrets
 | Élément | Emplacement | Usage |
@@ -372,6 +365,13 @@ graph TD
 | `etatExecution` | ScriptProperties (`setScriptProperties`, `getEtatExecution`). | Verrou anti chevauchements. |
 | Librairie Apps Script | `libKizeo` (`sheetInterface/appsscript.json`). | Expose les fonctions de `lib/` au script lié. |
 | Services OAuth | Drive, Spreadsheets, Mail, UrlFetch, HtmlService. | Implicitement requis par les Apps Script utilisés. |
+
+### Configuration requise (onglet « Nom || ID »)
+- **Champs obligatoires** : `form_id` (string non vide), `form_name` (string non vide), `bq_alias` (string ≤ 64 caractères), `action` (code `act_*`). Les colonnes supplémentaires (`export_*`, options Drive…) restent libres.
+- **Écriture maîtrisée** : la sélection d’un formulaire via l’UI crée ou met à jour l’onglet en fusionnant les valeurs existantes ; aucune réécriture « magique » n’est effectuée côté bibliothèque.
+- **Validation à l’exécution** : `main()` relit l’onglet actif, valide chaque champ obligatoire et affiche soit une boîte de dialogue (`SpreadsheetApp.getUi().alert`), soit un toast si le script tourne via déclencheur. Tant que l’erreur persiste, l’ingestion est bloquée.
+- **Correction** : modifier directement la cellule fautive ou relancer « Sélectionner le formulaire Kizeo » pour regénérer l’en-tête minimal. Pour repartir de zéro, supprimer manuellement l’onglet puis relancer l’assistant.
+- **Métadonnées de run** : `last_data_id`, `last_update_time`, `last_answer_time`, `last_run_at`, `last_row_count` sont mis à jour par `main` après chaque ingestion réussie ; ils servent uniquement de repère et peuvent être effacés sans risque.
 
 ## Error Handling, Logging & Observability
 - `handleException` envoie un mail détaillé (utilisateur, URL du script, stack trace) à `jsonnier@sarpindustries.fr` et logge l’erreur (`lib/GestionErreurs.gs.js:8`).
@@ -391,7 +391,6 @@ graph TD
 | Token Kizeo stocké dans un Sheet distinct en clair. | Risque sécurité, dépendance additionnelle. | `lib/APIHandler.js:12` |
 | Pas de retry/backoff sur les appels API. | Sensible aux erreurs réseau/quota. | `lib/APIHandler.js:28` |
 | `nbFormulairesACharger` fixé à 30. | Risque de données non récupérées si > 30 non lus. | `sheetInterface/Code.js:32` |
-| `reInitOngletActif` n’envoie pas les paramètres requis à `processData`. | Potentiel bug (paramètres `action`, `nbFormulairesACharger` manquants). | `sheetInterface/UI.js:136` |
 | AppendRow unitaire. | Performance limitée pour gros volumes. | `lib/0_Data.js:133` |
 | Déduplication sur toutes les feuilles après chaque import. | Coût croissant avec nombre d’onglets. | `lib/0_Data.js:78` |
 | Gestion incomplète de certains champs (cases à cocher multiples mentionnées en TODO). | Données potentiellement non normalisées. | Commentaires `sheetInterface/Code.js` |
@@ -1930,59 +1929,13 @@ function main() {
 }
 
 /**
- * Réinitialise complètement la feuille si l'utilisateur est d'accord.
- * Toutes les feuilles sauf 'Reinit' sont supprimées et 'Reinit' est vidée.
- * Tous les déclencheurs sont supprimés et l'utilisateur est invité à définir une nouvelle durée de déclenchement.
- * Les données sont marquées comme non lues sur le serveur Kizeo
- * Ensuite, la fonction onOpen est exécutée et la fonction de sélection de formulaire est chargée.
+ * `reInit` (supprimé)
+ * 
+ * L'ancienne réinitialisation globale a été retirée. Pour repartir d'un classeur propre,
+ * supprimer l'onglet de configuration puis relancer « Sélectionner le formulaire Kizeo ».
  */
 function reInit() {
-  let spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-  let sheetEnCours = spreadsheetBdD.getActiveSheet();
-  
-  var scriptProperties = PropertiesService.getScriptProperties();
-  var etatExecution = scriptProperties.getProperty('etatExecution');
-  //action : limite la portée de l'action markasread et unread à un spreadSheet : Attention si plusieurs fichiers sheet portent le meme nom !!!
-  let action=SpreadsheetApp.getActiveSpreadsheet().getName()
-
-  let ui = SpreadsheetApp.getUi();
-  let responseReInit = ui.alert('Avertissement', 'Souhaitez vous réinitialiser totalement le sheet?', ui.ButtonSet.OK_CANCEL);
-  if (responseReInit === ui.Button.OK) {
-    if (etatExecution === "enCours") {
-      let forceReInit = ui.alert('Avertissement', 'Une exécution est en cours, souhaitez-vous forcer la réinitialisation?', ui.ButtonSet.OK_CANCEL);
-      if (forceReInit === ui.Button.CANCEL) {
-        throw new Error('Reinit : Exécution en cours');
-      }
-    }
-
-    libKizeo.marquerReponseNonLues(sheetEnCours,action);
-    
-    sheetEnCours.setName('Reinit');
-
-    let range = sheetEnCours.getDataRange();
-    range.clearFormat();
-
-    deleteAllTriggers();
-    if (etatExecution === "enCours") {
-      setScriptProperties('termine');
-    }
-    
-    let onglets = spreadsheetBdD.getSheets();
-    for (let i = 0; i &lt; onglets.length; i++) {
-      if (onglets[i].getName() !== 'Reinit') {
-        spreadsheetBdD.deleteSheet(onglets[i]);
-      } else {
-        let range = onglets[i].getDataRange();
-        range.clearContent();
-      }
-    }
-    
-    setScriptProperties('termine');
-    deleteAllTriggers();
-    
-    // Demander la configuration du déclencheur
-    askForTimeInterval();
-  }
+  throw new Error('reInit supprimée : utiliser la suppression manuelle de l\'onglet.');
 }
 
 
@@ -2052,10 +2005,11 @@ function setScriptPropertiesTermine(){
 function afficheMenu() {
   try {
     const ui = SpreadsheetApp.getUi();
-    const menu = ui.createMenu('Configuration Kizeo')
+    ui.createMenu('Configuration Kizeo')
       .addItem('Selectionner le formulaire Kizeo', 'chargeSelectForm')
-      .addItem('Actualiser le sheet', 'majSheet')
-      .addItem('Réinitialiser le sheet', 'reInitOngletActif')
+      .addItem('Initialiser BigQuery', 'initBigQueryConfigFromSheet')
+      .addItem('Actualiser ', 'majSheet')
+      .addItem('Configurer la mise à jour automatique', 'openTriggerFrequencyDialog')
       .addToUi();
   } catch (e) {
     libKizeo.handleException('afficheMenu', e);
@@ -2134,57 +2088,13 @@ function enregistrementUI(formulaire) {
 
 
 /**
- * Réinitialise l'onglet actif et tous les tableaux liés à ce formulaire.
+ * `reInitOngletActif` (supprimée)
  * 
- * Affiche un avertissement si l'onglet actif n'est pas lié à un formulaire.
- * Sinon, efface le contenu de l'onglet actif et de tous les tableaux liés à ce formulaire,
- * puis lance la mise à jour des données du formulaire correspondant.
+ * L'ancienne purge automatique d'onglet a été retirée. Supprimer les lignes manuellement
+ * depuis la feuille puis relancer l'assistant si nécessaire.
  */
 function reInitOngletActif() {
-  var scriptProperties = PropertiesService.getScriptProperties();
-  
-  var scriptProperties = PropertiesService.getScriptProperties();
-  var etatExecution = scriptProperties.getProperty('etatExecution');
-  if(etatExecution==="enCours"){
-      ui.alert('Avertissement', 'Une exécution est en cours, veuillez patienter et relancer la réinitialisation.',ui.ButtonSet.OK);
-      throw new Error('Reinit : Exécution en cours');
-  }
-
-  try {
-    const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-    const activeSheet = spreadsheetBdD.getActiveSheet();
-    const nomOngletActif = activeSheet.getName();
-    const nomOngletActifTab = nomOngletActif.split(' || ');
-
-    if (nomOngletActifTab.length &gt; 2) {
-      const ui = SpreadsheetApp.getUi();
-      ui.alert('Avertissement', 'Seuls les onglets des Formulaires peuvent être réinitialisés.', ui.ButtonSet.OK);
-      Logger.log('reInitOngletActif: Avertissement - Seuls les onglets des Formulaires peuvent être réinitialisés.');
-    } else {
-      const range = activeSheet.getDataRange();
-      range.clearContent();
-      const formulaire = {
-        nom: nomOngletActifTab[0],
-        id: nomOngletActifTab[1]
-      };
-
-      const onglets = spreadsheetBdD.getSheets();
-      // Parcourir tous les onglets et mettre à jour leurs données
-      for (let i = 0; i &lt; onglets.length; i++) {
-        const onglet = onglets[i].getName();
-        const nomOngletTab = onglet.split(' || ');
-        if (nomOngletTab.length &gt; 2 &amp;&amp; nomOngletActifTab[1] === nomOngletTab[1]) {
-          // Il s'agit d'un tableau du formulaire actif
-          Logger.log('Effacer le tableau');
-          spreadsheetBdD.getSheetByName(onglet).getDataRange().clearContent();
-        }
-      }
-      libKizeo.processData(spreadsheetBdD, formulaire);
-      setScriptProperties('termine');
-    }
-  } catch (e) {
-    libKizeo.handleException('reInitOngletActif', e);
-  }
+  throw new Error('reInitOngletActif supprimée : intervenir directement dans la feuille.');
 }
 
 
@@ -2197,18 +2107,18 @@ function majSheet() {
 }
 
 /**
- * Affiche l'interface de sélection d'intervalle de temps pour la mise à jour automatique.
- * Utilise un fichier HTML séparé pour une meilleure organisation.
+ * Ouvre la boîte de dialogue de configuration du déclencheur automatique.
  */
-function askForTimeInterval() {
+function openTriggerFrequencyDialog() {
   try {
     const htmlTemplate = HtmlService.createTemplateFromFile('timeIntervalSelector.html');
+    htmlTemplate.selectedFrequency = getStoredTriggerFrequency();
     const htmlOutput = htmlTemplate.evaluate()
       .setWidth(400)
       .setHeight(350);
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Configuration de la mise à jour automatique');
   } catch (e) {
-    libKizeo.handleException('askForTimeInterval', e);
+    uiHandleException('openTriggerFrequencyDialog', e);
   }
 }
 
@@ -2219,27 +2129,32 @@ function askForTimeInterval() {
  */
 function processIntervalChoice(choix) {
   const ui = SpreadsheetApp.getUi();
-  
-  if (choix === 'none') {
-    // Supprimer tous les déclencheurs existants
-    deleteAllTriggers()
-    ui.alert('Information', 'Mise à jour automatique désactivée', ui.ButtonSet.OK);
-    chargeSelectForm();
+  const sanitizedChoice = sanitizeTriggerFrequency(choix || TRIGGER_DISABLED_KEY);
+
+  if (choix && sanitizedChoice !== choix) {
+    ui.alert(
+      'Fréquence ajustée',
+      `La valeur ${choix} n'est pas prise en charge. Application de ${describeTriggerOption(sanitizedChoice)}.`,
+      ui.ButtonSet.OK
+    );
+  }
+
+  const storedChoice = setStoredTriggerFrequency(sanitizedChoice);
+
+  try {
+    const option = configureTriggerFromKey(storedChoice);
+    if (storedChoice === TRIGGER_DISABLED_KEY) {
+      ui.alert('Information', 'Mise à jour automatique désactivée.', ui.ButtonSet.OK);
+    } else if (option) {
+      ui.alert('Information', `Mise à jour automatique programmée : ${option.label}.`, ui.ButtonSet.OK);
+    }
+  } catch (e) {
+    uiHandleException('processIntervalChoice.configure', e, {
+      triggerChoice: storedChoice
+    });
+    ui.alert('Erreur', "La configuration du déclencheur a échoué.", ui.ButtonSet.OK);
     return;
   }
-  
-  // Extraire le type (M ou H) et la valeur
-  const type = choix.charAt(0);
-  const valeur = parseInt(choix.substring(1), 10);
-  
-  // Configurer le déclencheur
-  configurerDeclencheurHoraire(valeur, type);
-  
-  // Afficher un message de confirmation
-  const uniteTxt = type === 'M' ? 'minute' : 'heure';
-  const pluriel = valeur &gt; 1 ? 's' : '';
-  // Continuer le processus après la configuration du déclencheur
-  chargeSelectForm();
 }
 </code></pre></details>
 

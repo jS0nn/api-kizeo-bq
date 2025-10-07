@@ -6,11 +6,11 @@
 function afficheMenu() {
   try {
     const ui = SpreadsheetApp.getUi();
-    const menu = ui.createMenu('Configuration Kizeo')
-      .addItem('Selectionner le formulaire Kizeo', 'chargeSelectForm')
+    ui.createMenu('Configuration Kizeo')
       .addItem('Initialiser BigQuery', 'initBigQueryConfigFromSheet')
-      .addItem('Actualiser le sheet', 'majSheet')
-      .addItem('Réinitialiser le sheet', 'reInitOngletActif')
+      .addItem('Selectionner le formulaire Kizeo', 'chargeSelectForm')
+      .addItem('Actualiser BigQuery', 'majSheet')
+      .addItem('Configurer la mise à jour automatique', 'openTriggerFrequencyDialog')
       .addToUi();
   } catch (e) {
     libKizeo.handleException('afficheMenu', e);
@@ -91,16 +91,33 @@ function enregistrementUI(formulaire) {
     const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
     setScriptProperties('enCours');
     try {
-      libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
-      const actionCode = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaireData.id);
-      libKizeo.upsertFormConfig(spreadsheetBdD, {
+      const targetSheet = libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
+      if (!targetSheet) {
+        ui.alert('Erreur', 'Impossible de préparer la feuille de configuration.', ui.ButtonSet.OK);
+        Logger.log('enregistrementUI: gestionFeuilles a renvoyé null.');
+        return;
+      }
+
+      const existingConfig = readFormConfigFromSheet(targetSheet);
+      const currentAction = existingConfig && existingConfig.action ? existingConfig.action.toString().trim() : '';
+      const actionCode = currentAction || createActionCode();
+      const finalConfig = Object.assign({}, existingConfig, {
         form_id: formulaireData.id,
         form_name: formulaireData.nom,
         bq_alias: aliasName,
         action: actionCode
       });
 
+      writeFormConfigToSheet(targetSheet, finalConfig);
       console.log(`Enregistrement UI -> action=${actionCode}, alias=${aliasName}`);
+      try {
+        libKizeo.ensureBigQueryCoreTables();
+      } catch (ensureError) {
+        libKizeo.handleException('enregistrementUI.ensureCore', ensureError, {
+          formId: formulaireData.id,
+          alias: aliasName
+        });
+      }
       main();
     } finally {
       setScriptProperties('termine');
@@ -110,80 +127,27 @@ function enregistrementUI(formulaire) {
   }
 }
 
-
-/**
- * Réinitialise l'onglet actif et tous les tableaux liés à ce formulaire.
- * 
- * Affiche un avertissement si l'onglet actif n'est pas lié à un formulaire.
- * Sinon, efface le contenu de l'onglet actif et de tous les tableaux liés à ce formulaire,
- * puis lance la mise à jour des données du formulaire correspondant.
- */
-function reInitOngletActif() {
-  const ui = SpreadsheetApp.getUi();
-  const scriptProperties = PropertiesService.getScriptProperties();
-  const etatExecution = scriptProperties.getProperty('etatExecution');
-  if (etatExecution === 'enCours') {
-    ui.alert(
-      'Avertissement',
-      'Une exécution est en cours, veuillez patienter et relancer la réinitialisation.',
-      ui.ButtonSet.OK
-    );
-    throw new Error('Reinit : Exécution en cours');
-  }
-
-  try {
-    const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-    const context = resolveFormulaireContext(spreadsheetBdD);
-    if (!context) {
-      ui.alert(
-        'Avertissement',
-        'Aucun formulaire configuré pour ce classeur.',
-        ui.ButtonSet.OK
-      );
-      Logger.log('reInitOngletActif: formulaire introuvable.');
-      return;
-    }
-
-    const formulaire = context.formulaire;
-    const action = libKizeo.ensureFormActionCode(spreadsheetBdD, formulaire.id);
-    setScriptProperties('enCours');
-    try {
-      libKizeo.upsertFormConfig(spreadsheetBdD, {
-        form_id: formulaire.id,
-        form_name: formulaire.nom,
-        action: action
-      });
-      libKizeo.processData(spreadsheetBdD, formulaire, action, nbFormulairesACharger);
-    } finally {
-      setScriptProperties('termine');
-    }
-  } catch (e) {
-    libKizeo.handleException('reInitOngletActif', e);
-  }
-}
-
-
 /**
  * Lancement manuel du programme de maj
  * 
  */
 function majSheet() {
-  main()
+  main();
 }
 
 /**
- * Affiche l'interface de sélection d'intervalle de temps pour la mise à jour automatique.
- * Utilise un fichier HTML séparé pour une meilleure organisation.
+ * Ouvre la boîte de dialogue de configuration du déclencheur automatique.
  */
-function askForTimeInterval() {
+function openTriggerFrequencyDialog() {
   try {
     const htmlTemplate = HtmlService.createTemplateFromFile('timeIntervalSelector.html');
+    htmlTemplate.selectedFrequency = getStoredTriggerFrequency();
     const htmlOutput = htmlTemplate.evaluate()
       .setWidth(400)
       .setHeight(350);
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Configuration de la mise à jour automatique');
   } catch (e) {
-    libKizeo.handleException('askForTimeInterval', e);
+    uiHandleException('openTriggerFrequencyDialog', e);
   }
 }
 
@@ -194,25 +158,30 @@ function askForTimeInterval() {
  */
 function processIntervalChoice(choix) {
   const ui = SpreadsheetApp.getUi();
-  
-  if (choix === 'none') {
-    // Supprimer tous les déclencheurs existants
-    deleteAllTriggers()
-    ui.alert('Information', 'Mise à jour automatique désactivée', ui.ButtonSet.OK);
-    chargeSelectForm();
+  const sanitizedChoice = sanitizeTriggerFrequency(choix || TRIGGER_DISABLED_KEY);
+
+  if (choix && sanitizedChoice !== choix) {
+    ui.alert(
+      'Fréquence ajustée',
+      `La valeur ${choix} n'est pas prise en charge. Application de ${describeTriggerOption(sanitizedChoice)}.`,
+      ui.ButtonSet.OK
+    );
+  }
+
+  const storedChoice = setStoredTriggerFrequency(sanitizedChoice);
+
+  try {
+    const option = configureTriggerFromKey(storedChoice);
+    if (storedChoice === TRIGGER_DISABLED_KEY) {
+      ui.alert('Information', 'Mise à jour automatique désactivée.', ui.ButtonSet.OK);
+    } else if (option) {
+      ui.alert('Information', `Mise à jour automatique programmée : ${option.label}.`, ui.ButtonSet.OK);
+    }
+  } catch (e) {
+    uiHandleException('processIntervalChoice.configure', e, {
+      triggerChoice: storedChoice
+    });
+    ui.alert('Erreur', "La configuration du déclencheur a échoué.", ui.ButtonSet.OK);
     return;
   }
-  
-  // Extraire le type (M ou H) et la valeur
-  const type = choix.charAt(0);
-  const valeur = parseInt(choix.substring(1), 10);
-  
-  // Configurer le déclencheur
-  configurerDeclencheurHoraire(valeur, type);
-  
-  // Afficher un message de confirmation
-  const uniteTxt = type === 'M' ? 'minute' : 'heure';
-  const pluriel = valeur > 1 ? 's' : '';
-  // Continuer le processus après la configuration du déclencheur
-  chargeSelectForm();
 }

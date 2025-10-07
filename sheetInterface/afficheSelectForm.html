@@ -70,9 +70,6 @@
 
       selectForm.addEventListener('change', function() {
         var index = selectForm.selectedIndex;
-        var valeur = selectForm.value;
-        // Rapporter cette donnée au <p>
-        console.log("Nv Formulaire selectionné n°: " + index + " - ID: " + valeur);
         document.getElementById("boutonEnvoiFormulaireVariables").className = "btn btn-primary btn-lg";
         const aliasInput = document.getElementById('aliasName');
         if (index > 0) {
@@ -84,8 +81,6 @@
       });
 
       function creeListeForm(listeForm) {
-        console.table(listeForm);
-
         var sel = document.getElementById("selectForm");
         var opt = document.createElement("option");
         opt.value = "";
@@ -93,7 +88,6 @@
         sel.add(opt, null);  //ajoute l'option à la fin du select
 
         for(let i=0; i<listeForm.length; i++){
-          console.log(listeForm[i].id);
           var opt = document.createElement("option");
           opt.value = listeForm[i].id;
           opt.text = listeForm[i].name;
@@ -114,12 +108,9 @@
 
       //Envoie les données dans le GS pour stockage en Sheet
       function handleFormSubmitVar() {
-        console.log("handleFormSubmit Formulaire");
         var selectForm = document.getElementById('selectForm');
         var formulaire = selectForm.options[selectForm.selectedIndex].text;
         var formulaireID = selectForm.options[selectForm.selectedIndex].value;
-        console.log(formulaire + " / " + formulaireID);
-        
         const aliasInput = document.getElementById('aliasName');
         const aliasName = aliasInput.value.trim();
 
@@ -146,7 +137,16 @@
         var formulaireObj = {id: formulaireID, nom: formulaire, alias: aliasName};
         google.script.run
           .withSuccessHandler(function() {
-            google.script.host.close();
+            google.script.run
+              .withSuccessHandler(function() {
+                google.script.host.close();
+              })
+              .withFailureHandler(function(error) {
+                console.error("Erreur lors de l'ouverture du sélecteur de fréquence:", error);
+                window.alert("Impossible d'ouvrir la configuration de la mise à jour automatique. Vous pouvez la lancer depuis le menu 'Configuration Kizeo'.");
+                google.script.host.close();
+              })
+              .openTriggerFrequencyDialog();
           })
           .withFailureHandler(function(error) {
             console.error("Erreur:", error);
