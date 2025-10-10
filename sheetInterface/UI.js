@@ -65,7 +65,7 @@ function enregistrementUI(formulaire) {
   try {
     user = Session.getActiveUser().getEmail();
     const ui = SpreadsheetApp.getUi();
-    const aliasName = (formulaire.alias || '').trim();
+    const rawTableName = formulaire.tableName ? String(formulaire.tableName).trim() : '';
     const formulaireData = { nom: formulaire.nom, id: formulaire.id };
 
     Logger.log(`enregistrementUI du formulaire: ${formulaireData.nom} / ${formulaireData.id} / ${user}`);
@@ -76,15 +76,30 @@ function enregistrementUI(formulaire) {
       return;
     }
 
-    if (!aliasName) {
-      ui.alert('Avertissement', "Veuillez saisir un alias BigQuery.", ui.ButtonSet.OK);
-      Logger.log('enregistrementUI: Avertissement - Alias BigQuery manquant.');
+    let tableName = '';
+    try {
+      if (typeof libKizeo.bqComputeTableName === 'function') {
+        tableName = libKizeo.bqComputeTableName(formulaireData.id, formulaireData.nom, rawTableName);
+      }
+    } catch (computeError) {
+      Logger.log(`enregistrementUI: échec calcul nom table -> ${computeError}`);
+    }
+
+    if (!tableName) {
+      ui.alert('Avertissement', "Impossible de déterminer le nom de la table BigQuery.", ui.ButtonSet.OK);
+      Logger.log('enregistrementUI: Avertissement - Nom de table BigQuery manquant.');
       return;
     }
 
-    if (aliasName.length > 64) {
-      ui.alert('Avertissement', "L'alias BigQuery doit contenir 64 caractères au maximum.", ui.ButtonSet.OK);
-      Logger.log('enregistrementUI: Avertissement - Alias BigQuery trop long.');
+    if (tableName.length > MAX_BQ_TABLE_NAME_LENGTH) {
+      ui.alert(
+        'Avertissement',
+        `Le nom de table BigQuery doit contenir ${MAX_BQ_TABLE_NAME_LENGTH} caractères au maximum.`,
+        ui.ButtonSet.OK
+      );
+      Logger.log(
+        `enregistrementUI: Avertissement - Nom de table BigQuery trop long (${tableName.length} caractères).`
+      );
       return;
     }
 
@@ -104,18 +119,18 @@ function enregistrementUI(formulaire) {
       const finalConfig = Object.assign({}, existingConfig, {
         form_id: formulaireData.id,
         form_name: formulaireData.nom,
-        bq_alias: aliasName,
+        bq_table_name: tableName,
         action: actionCode
       });
 
       writeFormConfigToSheet(targetSheet, finalConfig);
-      console.log(`Enregistrement UI -> action=${actionCode}, alias=${aliasName}`);
+      console.log(`Enregistrement UI -> action=${actionCode}, table=${tableName}`);
       try {
         libKizeo.ensureBigQueryCoreTables();
       } catch (ensureError) {
         libKizeo.handleException('enregistrementUI.ensureCore', ensureError, {
           formId: formulaireData.id,
-          alias: aliasName
+          tableName
         });
       }
       main();
@@ -172,6 +187,7 @@ function processIntervalChoice(choix) {
 
   try {
     const option = configureTriggerFromKey(storedChoice);
+    persistTriggerFrequencyToSheet(storedChoice);
     if (storedChoice === TRIGGER_DISABLED_KEY) {
       ui.alert('Information', 'Mise à jour automatique désactivée.', ui.ButtonSet.OK);
     } else if (option) {

@@ -7,9 +7,11 @@
 - [x] Cartographier les champs Kizeo → schéma BigQuery typé (parents)
 - [x] Implémenter l'écriture des tables parent (colonnes dynamiques)
 - [x] Implémenter l'écriture BigQuery des médias Drive *(fait: `bqIngestMediaBatch` crée une table par formulaire via `formId__alias__media` et enregistre `drive_file_id`, champs parent, URL Drive)*
+- [ ] Optimiser la déduplication Drive des médias sans multiplier les appels `DriveApp` *(conserver l’idée mais réduire les `getFilesByName` en rafale)*
 - [ ] Gérer les évolutions de schéma (ALTER ADD COLUMN)
 - [x] Renforcer `bqRecordAudit` (statuts d'échec, volumétrie, durée, référence run)
 - [ ] Préparer le backfill historique et validation BI *(à définir sans passer par Sheets API; envisager script dédié utilisant `bqIngestRawKizeoBatch`)*
+- [ ] Valider la spécification migration Cloud Run (voir docs/cloudrun-migration.md)
 
 ## Notes rapides
 - Les fonctions BigQuery nécessitent le service avancé `BigQuery` activé (fait dans `lib/appsscript.json`).

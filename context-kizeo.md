@@ -195,7 +195,7 @@ erDiagram
 | Mapping Sheet | Normalisation données, entêtes dynamiques, sous-formulaires, conversions | `lib/0_Data.js`, `lib/Tableaux.js` | `saveDataToSheet`, `prepareDataToRowFormat` | — | `SpreadsheetApp`, `DriveApp` |
 | Médias Drive | Télécharger blobs (photos/signatures), créer dossiers, exporter PDF | `lib/Images.js`, `sheetInterface/Code.js` | `gestionChampImage`, `exportPdfBlob`, `exportMedias` | — | `DriveApp`, `UrlFetchApp` |
 | Listes externes | Mettre à jour tags Kizeo après traitement complet | `lib/ListesExternes.js` | `majListeExterne` | — | `requeteAPIDonnees` |
-| Déduplication & maintenance | Supprimer doublons `form_unique_id`, appliquer formats | `lib/GestionDonneesMaJ.js`, `lib/Outils.js` | `gestionDesDonneesMaJ` | — | `SpreadsheetApp` |
+| Déduplication & maintenance | Supprimer doublons (`Sheets`, `BigQuery`), appliquer formats | `lib/GestionDonneesMaJ.js`, `lib/Outils.js`, `lib/BigQuery.js` | `gestionDesDonneesMaJ`, `bqPurgeDuplicateParentRows`, `bqPurgeDuplicateSubTableRows` | — | `SpreadsheetApp`, `BigQuery` |
 | Gestion erreurs | Journaliser et notifier par mail | `lib/GestionErreurs.gs.js` | `handleException` | — | `MailApp`, `ScriptApp` |
 | UI & scheduling | Menu Sheets, modales HTML, sélection formulaire, déclencheurs | `sheetInterface/UI.js`, `sheetInterface/outils.js` | `afficheMenu`, `chargeSelectForm`, `enregistrementUI`, `configurerDeclencheurHoraire` | `onOpen`, time-based | `HtmlService`, `PropertiesService` |
 | Orchestrateur | Boucle sur formulaires, valide la config, lance ingestion, exports Drive, gère verrou `etatExecution` | `sheetInterface/Code.js` | `main` | Déclencheur horaire configurable | `libKizeo`, `DriveApp`, `PropertiesService` |
@@ -354,7 +354,7 @@ graph TD
 - Dialogue de configuration horaire (`timeIntervalSelector.html`) : `processIntervalChoice` configure ou supprime le déclencheur en appelant `configurerDeclencheurHoraire` / `deleteAllTriggers`.
 - Trigger `onOpen` pour installer le menu et avertir sur la longueur du nom du fichier (`sheetInterface/Code.js:40`).
 - ScriptProperty `etatExecution` pour éviter les exécutions concurrentes (`sheetInterface/Code.js:143`).
-- `main` valide la configuration depuis l'onglet actif (`form_id`, `form_name`, `bq_alias`, `action`) et bloque l'exécution avec une alerte si un champ manque ou est mal typé.
+- `main` valide la configuration depuis l'onglet actif (`form_id`, `form_name`, `bq_table_name`, `action`) et bloque l'exécution avec une alerte si un champ manque ou est mal typé.
 - Les métadonnées d'exécution (`last_data_id`, `last_update_time`, `last_run_at`, `last_row_count`) sont écrites via le script lié après ingestion ; la bibliothèque `libKizeo` ne réécrit plus la configuration.
 
 ## Configuration & Secrets
@@ -367,7 +367,7 @@ graph TD
 | Services OAuth | Drive, Spreadsheets, Mail, UrlFetch, HtmlService. | Implicitement requis par les Apps Script utilisés. |
 
 ### Configuration requise (onglet « Nom || ID »)
-- **Champs obligatoires** : `form_id` (string non vide), `form_name` (string non vide), `bq_alias` (string ≤ 64 caractères), `action` (code `act_*`). Les colonnes supplémentaires (`export_*`, options Drive…) restent libres.
+- **Champs obligatoires** : `form_id` (string non vide), `form_name` (string non vide), `bq_table_name` (string ≤ 128 caractères), `action` (code `act_*`). Les colonnes supplémentaires (`export_*`, options Drive…) restent libres.
 - **Écriture maîtrisée** : la sélection d’un formulaire via l’UI crée ou met à jour l’onglet en fusionnant les valeurs existantes ; aucune réécriture « magique » n’est effectuée côté bibliothèque.
 - **Validation à l’exécution** : `main()` relit l’onglet actif, valide chaque champ obligatoire et affiche soit une boîte de dialogue (`SpreadsheetApp.getUi().alert`), soit un toast si le script tourne via déclencheur. Tant que l’erreur persiste, l’ingestion est bloquée.
 - **Correction** : modifier directement la cellule fautive ou relancer « Sélectionner le formulaire Kizeo » pour regénérer l’en-tête minimal. Pour repartir de zéro, supprimer manuellement l’onglet puis relancer l’assistant.
@@ -422,6 +422,12 @@ graph TD
 - Stocker un curseur `last_update_time` (ScriptProperties ou table BigQuery) pour filtrer les nouvelles réponses.
 - Utiliser `insertId=form_unique_id` dans BigQuery pour obtenir l’idempotence côté ingestion. |
 - Sous-formulaires : utiliser (`form_unique_id`, `subform_name`, `row_index`) comme clé composite. |
+
+### Déduplication BigQuery
+- `bqPurgeDuplicateParentRows` (lib/BigQuery.js) supprime les doublons de la table parent en conservant, pour chaque `form_unique_id`, la ligne la plus récente selon `update_time` puis `ingestion_time`. La purge est déclenchée automatiquement après `bqIngestParentBatch` et trace un audit (`action = parent_dedupe`, `row_count = numDmlAffectedRows`).
+- `bqPurgeDuplicateSubTableRows` applique le même principe sur chaque table fille : pour chaque couple (`parent_data_id`, `sub_row_index`) on ne garde que la ligne dont `parent_update_time` est la plus récente (repli sur `ingestion_time`). Les opérations sont déclenchées après `bqIngestSubTablesBatch` et enregistrées avec `action = subform_dedupe`.
+- Les requêtes `DELETE` reposent sur une CTE `ROW_NUMBER()` partitionnée qui garantit l’unicité logique tout en conservant l’historique récent s’il existe des mises à jour multiples dans le même batch.
+- Les volumes purgés sont loggés dans la table `etl_audit` et remontent dans les logs Apps Script (`console.log`) pour faciliter le suivi des ré-ingestions.
 
 ### Mapping Sheet → BigQuery
 | Sheet | Colonne | Table BQ | Colonne | Transformation |

@@ -35,9 +35,9 @@
         <form id="formulaireVariables"> 
           <div id="divCheckboxes"></div>
           <div class="mb-3">
-            <label for="aliasName" class="form-label">Alias BigQuery</label>
-            <input type="text" class="form-control" id="aliasName" name="aliasName" maxlength="64" placeholder="ex. inspections_brevets" required>
-            <div class="form-text">Nom lisible utilisé pour nommer les tables BigQuery.</div>
+            <label for="bqTableName" class="form-label">Nom de table BigQuery</label>
+            <input type="text" class="form-control" id="bqTableName" name="bqTableName" maxlength="128" placeholder="exemple : inspection_chantier">
+            <div class="form-text">La saisie du nom est optionnelle : laisser vide pour que l'identifiant et le nom du formulaire soient utilisés automatiquement. Renseignez-le uniquement si vous souhaitez personnaliser la partie alias.</div>
           </div>
           <div class="d-flex justify-content-center mb-4">
             <button type="submit" id="boutonEnvoiFormulaireVariables">Ajouter à la configuration</button>                
@@ -66,18 +66,29 @@
       });
 
 
-      var selectForm = document.getElementById('selectForm');
+      const selectForm = document.getElementById('selectForm');
+      const tableNameInput = document.getElementById('bqTableName');
+      const MAX_TABLE_NAME_LENGTH = 128;
+      const BQ_TABLE_PART_SEPARATOR = '__';
 
       selectForm.addEventListener('change', function() {
-        var index = selectForm.selectedIndex;
+        const index = selectForm.selectedIndex;
         document.getElementById("boutonEnvoiFormulaireVariables").className = "btn btn-primary btn-lg";
-        const aliasInput = document.getElementById('aliasName');
         if (index > 0) {
           const formName = selectForm.options[index].text;
-          aliasInput.value = slugify(formName).slice(0, 64);
+          const formId = selectForm.options[index].value;
+          const defaultTableName = buildDefaultTableName(formId, formName);
+          tableNameInput.value = defaultTableName;
+          tableNameInput.dataset.defaultTableName = defaultTableName;
         } else {
-          aliasInput.value = '';
+          tableNameInput.value = '';
+          delete tableNameInput.dataset.defaultTableName;
         }
+        tableNameInput.classList.remove('is-invalid');
+      });
+
+      tableNameInput.addEventListener('input', function() {
+        tableNameInput.classList.remove('is-invalid');
       });
 
       function creeListeForm(listeForm) {
@@ -108,33 +119,30 @@
 
       //Envoie les données dans le GS pour stockage en Sheet
       function handleFormSubmitVar() {
-        var selectForm = document.getElementById('selectForm');
-        var formulaire = selectForm.options[selectForm.selectedIndex].text;
-        var formulaireID = selectForm.options[selectForm.selectedIndex].value;
-        const aliasInput = document.getElementById('aliasName');
-        const aliasName = aliasInput.value.trim();
+        const formulaire = selectForm.options[selectForm.selectedIndex].text;
+        const formulaireID = selectForm.options[selectForm.selectedIndex].value;
 
-        let hasError = false;
-        if (!aliasName) {
-          aliasInput.classList.add('is-invalid');
-          if (!hasError) aliasInput.focus();
-          hasError = true;
-        } else if (aliasName.length > 64) {
-          aliasInput.classList.add('is-invalid');
-          if (!hasError) aliasInput.focus();
-          hasError = true;
-        } else {
-          aliasInput.classList.remove('is-invalid');
-        }
+        const defaultTableName = buildDefaultTableName(formulaireID, formulaire);
+        const finalTableName = normalizeTableName(formulaireID, formulaire, tableNameInput.value || defaultTableName);
 
-        if (hasError) {
+        const hasTooLongName = finalTableName.length > MAX_TABLE_NAME_LENGTH;
+        if (!finalTableName || hasTooLongName) {
+          tableNameInput.classList.add('is-invalid');
+          tableNameInput.focus();
+          if (hasTooLongName) {
+            alert(`Le nom de table BigQuery doit contenir ${MAX_TABLE_NAME_LENGTH} caractères maximum.`);
+          }
           return;
         }
 
+        tableNameInput.value = finalTableName;
+        tableNameInput.classList.remove('is-invalid');
+
         // Désactiver le bouton pour éviter les clics multiples
         document.getElementById("boutonEnvoiFormulaireVariables").disabled = true;
-        
-        var formulaireObj = {id: formulaireID, nom: formulaire, alias: aliasName};
+
+        const aliasPart = extractAliasPart(formulaireID, finalTableName);
+        var formulaireObj = {id: formulaireID, nom: formulaire, tableName: finalTableName, alias: aliasPart};
         google.script.run
           .withSuccessHandler(function() {
             google.script.run
@@ -154,15 +162,80 @@
           })
           .enregistrementUI(formulaireObj);
       }
-      function slugify(value) {
+      function slugifyIdentifier(value) {
         if (!value) return '';
         return value
           .toString()
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-zA-Z0-9]+/g, '_')
-          .replace(/^_+|_+$/g, '')
+          .replace(/[^a-zA-Z0-9_]/g, '_')
+          .replace(/^_+/, '')
+          .replace(/_+$/g, '')
           .toLowerCase();
+      }
+
+      function sanitizeTablePart(source, fallback) {
+        if (source === null || source === undefined) return fallback;
+        const trimmed = String(source).trim();
+        if (!trimmed) return fallback;
+        const slug = slugifyIdentifier(trimmed);
+        if (!slug) return fallback;
+        if (slug === 'field' && trimmed.toLowerCase() !== 'field') {
+          return fallback;
+        }
+        return slug;
+      }
+
+      function joinTableParts(parts) {
+        return parts.filter((part) => part && part.length).join(BQ_TABLE_PART_SEPARATOR);
+      }
+
+      function buildDefaultTableName(formId, formName) {
+        const idPart = sanitizeTablePart(formId, 'form');
+        const namePart = sanitizeTablePart(formName, 'sheet');
+        return joinTableParts([idPart, namePart]);
+      }
+
+      function normalizeTableName(formId, formName, rawValue) {
+        const idPart = sanitizeTablePart(formId, 'form');
+        const fallbackNamePart = sanitizeTablePart(formName, 'sheet');
+        const trimmed = rawValue ? String(rawValue).trim() : '';
+        if (!trimmed) {
+          return joinTableParts([idPart, fallbackNamePart]);
+        }
+
+        const normalizedInput = slugifyIdentifier(trimmed);
+        if (!normalizedInput) {
+          return joinTableParts([idPart, fallbackNamePart]);
+        }
+
+        let aliasCandidate = normalizedInput;
+        if (normalizedInput.includes(BQ_TABLE_PART_SEPARATOR)) {
+          const segments = normalizedInput.split(BQ_TABLE_PART_SEPARATOR).filter(Boolean);
+          if (!segments.length) {
+            aliasCandidate = fallbackNamePart;
+          } else if (segments[0] === idPart && segments.length > 1) {
+            aliasCandidate = segments.slice(1).join(BQ_TABLE_PART_SEPARATOR);
+          } else {
+            aliasCandidate = segments[segments.length - 1];
+          }
+        }
+
+        const aliasPart = sanitizeTablePart(aliasCandidate, fallbackNamePart);
+        return joinTableParts([idPart, aliasPart]);
+      }
+
+      function extractAliasPart(formId, tableName) {
+        if (!tableName) return '';
+        const idPart = sanitizeTablePart(formId, 'form');
+        const segments = tableName.split(BQ_TABLE_PART_SEPARATOR);
+        if (segments.length <= 1) {
+          return tableName;
+        }
+        if (segments[0] === idPart) {
+          return segments.slice(1).join(BQ_TABLE_PART_SEPARATOR);
+        }
+        return segments[segments.length - 1];
       }
     </script>
   </body>

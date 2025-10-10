@@ -34,7 +34,7 @@
 
 // Paramétrage de la limite d'ingestion Kizeo
 const DEFAULT_KIZEO_BATCH_LIMIT = 30;
-const KIZEO_BATCH_LIMIT_PROPERTY = 'KIZEO_UNREAD_LIMIT';
+const CONFIG_BATCH_LIMIT_KEY = 'batch_limit';
 
 function sanitizeBatchLimitValue(raw) {
   if (raw === null || raw === undefined) return null;
@@ -45,17 +45,11 @@ function sanitizeBatchLimitValue(raw) {
   return floored;
 }
 
-function getConfiguredBatchLimit() {
-  const docProps = PropertiesService.getDocumentProperties();
-  const raw = docProps.getProperty(KIZEO_BATCH_LIMIT_PROPERTY);
+function getConfiguredBatchLimit(config) {
+  const raw =
+    config && typeof config === 'object' && CONFIG_BATCH_LIMIT_KEY in config ? config[CONFIG_BATCH_LIMIT_KEY] : null;
   const sanitized = sanitizeBatchLimitValue(raw);
-  if (sanitized) {
-    if (String(sanitized) !== raw) {
-      docProps.setProperty(KIZEO_BATCH_LIMIT_PROPERTY, String(sanitized));
-    }
-    return sanitized;
-  }
-  docProps.setProperty(KIZEO_BATCH_LIMIT_PROPERTY, String(DEFAULT_KIZEO_BATCH_LIMIT));
+  if (sanitized !== null) return sanitized;
   return DEFAULT_KIZEO_BATCH_LIMIT;
 }
 
@@ -76,16 +70,18 @@ const TRIGGER_OPTIONS = {
 const CONFIG_HEADERS = [
   'form_id',
   'form_name',
-  'bq_alias',
+  'bq_table_name',
   'action',
+  CONFIG_BATCH_LIMIT_KEY,
   'last_data_id',
   'last_update_time',
   'last_answer_time',
   'last_run_at',
-  'last_row_count',
+  'last_saved_row_count_saved',
   'trigger_frequency'
 ];
-const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'bq_alias', 'action'];
+const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'action'];
+const MAX_BQ_TABLE_NAME_LENGTH = 128;
 
 function sanitizeTriggerFrequency(raw) {
   if (raw === null || raw === undefined) return DEFAULT_TRIGGER_FREQUENCY;
@@ -141,6 +137,29 @@ function setStoredTriggerFrequency(key) {
   const sanitized = sanitizeTriggerFrequency(key);
   PropertiesService.getScriptProperties().setProperty(TRIGGER_FREQUENCY_PROPERTY, sanitized);
   return sanitized;
+}
+
+function persistTriggerFrequencyToSheet(frequencyKey) {
+  try {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    if (!spreadsheet) return;
+    const activeSheet = spreadsheet.getActiveSheet();
+    if (!activeSheet) return;
+    const existingConfig = readFormConfigFromSheet(activeSheet) || {};
+    const sanitized = sanitizeTriggerFrequency(frequencyKey);
+    if (
+      existingConfig.trigger_frequency &&
+      existingConfig.trigger_frequency.toString().trim() === sanitized
+    ) {
+      return;
+    }
+    const mergedConfig = Object.assign({}, existingConfig, {
+      trigger_frequency: sanitized
+    });
+    writeFormConfigToSheet(activeSheet, mergedConfig);
+  } catch (e) {
+    uiHandleException('persistTriggerFrequencyToSheet', e, { frequencyKey });
+  }
 }
 
 function onOpen() {
@@ -220,6 +239,24 @@ function getOrCreateSubFolder(parentFolderId, subFolderName) {
 }
 
 /**
+ * Génère un nom de fichier stable pour un média en y ajoutant l'ID Drive si possible.
+ * @param {{name:string,fileName:string,driveFileId:string,dataId:string}} media
+ * @return {string}
+ */
+function buildMediaDisplayName(media) {
+  const baseName = media.name || media.fileName || `media_${media.dataId || 'unknown'}`;
+  const driveId = media.driveFileId || '';
+  if (!driveId) {
+    return baseName;
+  }
+  const sanitizedId = driveId.replace(/[^A-Za-z0-9_-]/g, '');
+  if (!sanitizedId || baseName.indexOf(sanitizedId) !== -1) {
+    return baseName;
+  }
+  return `${baseName}__${sanitizedId}`;
+}
+
+/**
  * Sauvegarde un blob PDF dans un dossier cible.
  */
 function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
@@ -241,7 +278,7 @@ function exportMedias(mediaList, targetFolderId) {
 
   mediaList.forEach((m) => {
     try {
-      const displayName = m.name || m.fileName || `media_${m.dataId || 'unknown'}`;
+      const displayName = buildMediaDisplayName(m);
 
       const candidateId = m.driveFileId || '';
       if (!candidateId && !m.id) {
@@ -318,6 +355,8 @@ function writeFormConfigToSheet(sheet, config) {
     });
   }
 
+  entries.delete('bq_alias');
+
   const rows = [];
   CONFIG_HEADERS.forEach((header) => {
     const value = entries.has(header) ? entries.get(header) : '';
@@ -342,7 +381,7 @@ function resolveFormulaireContext(spreadsheetBdD) {
   return {
     sheet,
     config,
-    batchLimit: getConfiguredBatchLimit()
+    batchLimit: getConfiguredBatchLimit(config)
   };
 }
 
@@ -367,8 +406,50 @@ function validateFormConfig(rawConfig, sheet) {
     }
   });
 
-  if (sanitized.bq_alias && sanitized.bq_alias.length > 64) {
-    errors.push({ key: 'bq_alias', message: 'bq_alias doit contenir 64 caractères maximum.' });
+  const rawBatchLimit = config[CONFIG_BATCH_LIMIT_KEY];
+  const sanitizedBatchLimit = sanitizeBatchLimitValue(rawBatchLimit);
+  if (
+    rawBatchLimit !== undefined &&
+    rawBatchLimit !== null &&
+    rawBatchLimit !== '' &&
+    sanitizedBatchLimit === null
+  ) {
+    errors.push({ key: CONFIG_BATCH_LIMIT_KEY, message: 'batch_limit doit être un entier positif.' });
+  } else {
+    sanitized[CONFIG_BATCH_LIMIT_KEY] =
+      sanitizedBatchLimit !== null ? sanitizedBatchLimit : DEFAULT_KIZEO_BATCH_LIMIT;
+  }
+
+  const tableNameCandidate =
+    config.bq_table_name !== undefined && config.bq_table_name !== null
+      ? String(config.bq_table_name).trim()
+      : config.bq_alias !== undefined && config.bq_alias !== null
+      ? String(config.bq_alias).trim()
+      : '';
+
+  const formIdForTable = sanitized.form_id || (config.form_id ? String(config.form_id).trim() : '');
+  const formNameForTable = sanitized.form_name || (config.form_name ? String(config.form_name).trim() : '');
+
+  let computedTableName = '';
+  try {
+    if (typeof libKizeo.bqComputeTableName === 'function') {
+      computedTableName = libKizeo.bqComputeTableName(formIdForTable, formNameForTable, tableNameCandidate);
+    }
+  } catch (computeError) {
+    console.log(`validateFormConfig: échec calcul table -> ${computeError}`);
+  }
+
+  if (!computedTableName) {
+    errors.push({ key: 'bq_table_name', message: 'bq_table_name manquant ou invalide.' });
+  } else {
+    if (computedTableName.length > MAX_BQ_TABLE_NAME_LENGTH) {
+      errors.push({
+        key: 'bq_table_name',
+        message: `bq_table_name doit contenir ${MAX_BQ_TABLE_NAME_LENGTH} caractères maximum.`
+      });
+    } else {
+      sanitized.bq_table_name = computedTableName;
+    }
   }
 
   return {
@@ -428,10 +509,21 @@ function main() {
   setScriptProperties('enCours');
 
   try {
+    const tableName = validation.config.bq_table_name;
+    let aliasPart = tableName;
+    try {
+      if (typeof libKizeo.bqExtractAliasPart === 'function') {
+        aliasPart = libKizeo.bqExtractAliasPart(tableName, validation.config.form_id);
+      }
+    } catch (aliasError) {
+      console.log(`main: impossible d'extraire l'alias -> ${aliasError}`);
+    }
+
     const formulaire = {
       nom: validation.config.form_name,
       id: validation.config.form_id,
-      alias: validation.config.bq_alias
+      tableName,
+      alias: aliasPart
     };
     const batchLimit = context.batchLimit || DEFAULT_KIZEO_BATCH_LIMIT;
     const action = validation.config.action;
@@ -451,14 +543,20 @@ function main() {
 
     // ---------- Préparation BigQuery et ingestion ----------
     const processResult = libKizeo.processData(spreadsheetBdD, formulaire, action, batchLimit);
-    if (processResult && (processResult.runTimestamp || processResult.latestRecord)) {
+    const canPersistRun =
+      processResult &&
+      processResult.status !== 'ERROR' &&
+      (processResult.runTimestamp || processResult.latestRecord || typeof processResult.rowCount === 'number');
+
+    if (canPersistRun) {
       const refreshedConfig = Object.assign({}, context.config, {
         form_id: formulaire.id,
         form_name: formulaire.nom,
-        bq_alias: formulaire.alias
+        bq_table_name: formulaire.tableName
       });
-      if (processResult.rowCount !== undefined && processResult.rowCount !== null) {
-        refreshedConfig.last_row_count = processResult.rowCount;
+      const hasRowCount = typeof processResult.rowCount === 'number' && !Number.isNaN(processResult.rowCount);
+      if (hasRowCount) {
+        refreshedConfig.last_saved_row_count = processResult.rowCount;
       }
       if (processResult.runTimestamp) {
         refreshedConfig.last_run_at = processResult.runTimestamp;
