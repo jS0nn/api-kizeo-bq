@@ -111,7 +111,8 @@ function describeTriggerOption(key) {
 
 function configureTriggerFromKey(key) {
   if (key === TRIGGER_DISABLED_KEY) {
-    deleteAllTriggers();
+    deleteTriggersByFunction(MAIN_TRIGGER_FUNCTION);
+    ensureDeduplicationTrigger();
     console.log('Déclencheurs automatiques désactivés.');
     return null;
   }
@@ -120,6 +121,7 @@ function configureTriggerFromKey(key) {
     throw new Error(`Fréquence de déclencheur inconnue: ${key}`);
   }
   configurerDeclencheurHoraire(option.value, option.type);
+  ensureDeduplicationTrigger();
   return option;
 }
 
@@ -175,6 +177,7 @@ function onOpen() {
   } catch (e) {
     uiHandleException('onOpen.triggerFrequency', e);
   }
+  ensureDeduplicationTrigger();
 }
 
 /**
@@ -637,6 +640,182 @@ function main() {
   } finally {
     setScriptProperties('termine');
   }
+}
+
+function runBigQueryDeduplication() {
+  if (getEtatExecution() === 'enCours') {
+    console.log('runBigQueryDeduplication: exécution principale en cours, déduplication reportée.');
+    return {
+      status: 'SKIPPED',
+      reason: 'RUN_IN_PROGRESS',
+      message: 'Une mise à jour est déjà en cours.'
+    };
+  }
+
+  const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
+  const context = resolveFormulaireContext(spreadsheetBdD);
+  if (!context) {
+    console.log('runBigQueryDeduplication: aucun formulaire configuré, déduplication ignorée.');
+    return {
+      status: 'SKIPPED',
+      reason: 'NO_FORM_CONFIG',
+      message: 'Aucun formulaire sélectionné.'
+    };
+  }
+
+  const validation = validateFormConfig(context.config, context.sheet);
+  if (!validation.isValid) {
+    console.log('runBigQueryDeduplication: configuration invalide, déduplication ignorée.');
+    return {
+      status: 'SKIPPED',
+      reason: 'INVALID_CONFIG',
+      message: 'Configuration invalide.',
+      errors: validation.errors
+    };
+  }
+
+  const tableName = validation.config.bq_table_name;
+  let aliasPart = tableName;
+  try {
+    if (typeof libKizeo.bqExtractAliasPart === 'function') {
+      aliasPart = libKizeo.bqExtractAliasPart(tableName, validation.config.form_id);
+    }
+  } catch (aliasError) {
+    console.log(`runBigQueryDeduplication: impossible d'extraire l'alias -> ${aliasError}`);
+  }
+
+  const formulaire = {
+    nom: validation.config.form_name,
+    id: validation.config.form_id,
+    tableName,
+    alias: aliasPart
+  };
+
+  Logger.log(`runBigQueryDeduplication: lancement pour ${formulaire.id} (${tableName})`);
+
+  try {
+    const summary = libKizeo.bqRunDeduplicationForForm(formulaire);
+    if (summary) {
+      Logger.log(
+        `runBigQueryDeduplication: terminé -> parent supprimé=${summary.parent.deleted}, tables filles traitées=${summary.subTables.length}`
+      );
+      return {
+        status: 'DONE',
+        parent: summary.parent,
+        subTables: summary.subTables
+      };
+    }
+    return {
+      status: 'DONE',
+      parent: null,
+      subTables: []
+    };
+  } catch (e) {
+    libKizeo.handleException('runBigQueryDeduplication', e, {
+      formId: formulaire.id,
+      tableName
+    });
+    return {
+      status: 'ERROR',
+      reason: 'EXCEPTION',
+      message: e && e.message ? e.message : String(e)
+    };
+  }
+}
+
+function launchManualDeduplication() {
+  const ui = SpreadsheetApp.getUi();
+  let result;
+  try {
+    result = runBigQueryDeduplication();
+  } catch (e) {
+    const message = e && e.message ? e.message : String(e);
+    ui.alert('Déduplication BigQuery', `Erreur inattendue: ${message}`, ui.ButtonSet.OK);
+    return;
+  }
+
+  if (!result) {
+    ui.alert('Déduplication BigQuery', "Aucun résultat retourné par la déduplication.", ui.ButtonSet.OK);
+    return;
+  }
+
+  if (result.status === 'SKIPPED') {
+    const reason = result.reason || 'UNKNOWN';
+    const message =
+      reason === 'RUN_IN_PROGRESS'
+        ? 'Une mise à jour est déjà en cours. Réessayez après sa fin.'
+        : reason === 'NO_FORM_CONFIG'
+        ? 'Aucun formulaire n’est configuré pour ce classeur. Sélectionnez un formulaire avant de lancer la déduplication.'
+        : reason === 'INVALID_CONFIG'
+        ? `Configuration invalide.\n${(result.errors && result.errors.length && result.errors[0].message) || ''}`.trim()
+        : result.message || 'Opération ignorée.';
+    ui.alert('Déduplication BigQuery', message, ui.ButtonSet.OK);
+    return;
+  }
+
+  if (result.status === 'ERROR') {
+    ui.alert(
+      'Déduplication BigQuery',
+      `Échec de la déduplication: ${result.message || 'Erreur inconnue.'}`,
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  const subTables = Array.isArray(result.subTables) ? result.subTables : [];
+  const entriesToReview = [];
+  const streamingBlocked = [];
+
+  const parentEntry = result.parent || null;
+  if (parentEntry && parentEntry.skipped) {
+    entriesToReview.push(parentEntry);
+    if (parentEntry.reason && parentEntry.reason.indexOf('STREAMING_BUFFER') === 0) {
+      streamingBlocked.push(parentEntry.tableId || 'table parent');
+    }
+  }
+
+  subTables.forEach((entry) => {
+    if (!entry) return;
+    if (entry.skipped) {
+      entriesToReview.push(entry);
+      if (entry.reason && entry.reason.indexOf('STREAMING_BUFFER') === 0) {
+        streamingBlocked.push(entry.tableId || 'table fille');
+      }
+    }
+  });
+
+  if (streamingBlocked.length) {
+    const list = streamingBlocked.map((name) => `• ${name}`).join('\n');
+    ui.alert(
+      'Déduplication BigQuery',
+      `Déduplication reportée: BigQuery signale un buffer de streaming actif sur:\n${list}\nRéessayez dans quelques minutes.`,
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  const parentDeleted = parentEntry && !parentEntry.skipped ? Number(parentEntry.deleted || 0) : 0;
+  const subDeleted = subTables
+    .filter((entry) => entry && !entry.skipped)
+    .reduce((acc, entry) => acc + Number(entry.deleted || 0), 0);
+
+  const successMessage = [
+    `Déduplication terminée.`,
+    `Doublons parent supprimés : ${parentDeleted}`,
+    `Doublons tables filles supprimés : ${subDeleted}`
+  ].join('\n');
+
+  if (entriesToReview.length) {
+    const otherIssues = entriesToReview
+      .filter((entry) => !(entry.reason && entry.reason.indexOf('STREAMING_BUFFER') === 0))
+      .map((entry) => `• ${entry.tableId || 'table inconnue'} (${entry.reason || 'raison inconnue'})`)
+      .join('\n');
+    const message = otherIssues ? `${successMessage}\n\nTables ignorées :\n${otherIssues}` : successMessage;
+    ui.alert('Déduplication BigQuery', message, ui.ButtonSet.OK);
+    return;
+  }
+
+  ui.alert('Déduplication BigQuery', successMessage, ui.ButtonSet.OK);
 }
 
 /**

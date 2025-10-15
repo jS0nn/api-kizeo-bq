@@ -10,6 +10,7 @@ function afficheMenu() {
       .addItem('Initialiser BigQuery', 'initBigQueryConfigFromSheet')
       .addItem('Selectionner le formulaire Kizeo', 'chargeSelectForm')
       .addItem('Actualiser BigQuery', 'majSheet')
+      .addItem('Forcer la déduplication BigQuery', 'launchManualDeduplication')
       .addItem('Configurer la mise à jour automatique', 'openTriggerFrequencyDialog')
       .addToUi();
   } catch (e) {
@@ -124,6 +125,7 @@ function enregistrementUI(formulaire) {
       });
 
       writeFormConfigToSheet(targetSheet, finalConfig);
+      ensureDeduplicationTrigger();
       console.log(`Enregistrement UI -> action=${actionCode}, table=${tableName}`);
       try {
         libKizeo.ensureBigQueryCoreTables();

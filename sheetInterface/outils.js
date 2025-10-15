@@ -1,3 +1,30 @@
+const MAIN_TRIGGER_FUNCTION = 'main';
+const DEDUP_TRIGGER_FUNCTION = 'runBigQueryDeduplication';
+const DEDUP_TRIGGER_INTERVAL_HOURS = 1;
+
+function deleteTriggersByFunction(functionName) {
+  try {
+    const allTriggers = ScriptApp.getProjectTriggers();
+    allTriggers.forEach((trigger) => {
+      if (!functionName || trigger.getHandlerFunction() === functionName) {
+        ScriptApp.deleteTrigger(trigger);
+      }
+    });
+  } catch (e) {
+    uiHandleException('deleteTriggersByFunction', e, { functionName });
+  }
+}
+
+function ensureDeduplicationTrigger() {
+  try {
+    deleteTriggersByFunction(DEDUP_TRIGGER_FUNCTION);
+    ScriptApp.newTrigger(DEDUP_TRIGGER_FUNCTION).timeBased().everyHours(DEDUP_TRIGGER_INTERVAL_HOURS).create();
+    Logger.log('Déclencheur de déduplication configuré: toutes les heures.');
+  } catch (e) {
+    uiHandleException('ensureDeduplicationTrigger', e);
+  }
+}
+
 /**
  * Configure un déclencheur horaire pour une fonction spécifiée.
  *
@@ -7,10 +34,9 @@
 function configurerDeclencheurHoraire(valeur, type) {
   try {
     // Supprimer les déclencheurs existants pour éviter les duplications
-    deleteAllTriggers();
+    deleteTriggersByFunction(MAIN_TRIGGER_FUNCTION);
 
-    const functionName = 'main';
-    const trigger = ScriptApp.newTrigger(functionName).timeBased();
+    const trigger = ScriptApp.newTrigger(MAIN_TRIGGER_FUNCTION).timeBased();
 
     if (type === 'M') {
       trigger.everyMinutes(valeur);
@@ -33,14 +59,7 @@ function configurerDeclencheurHoraire(valeur, type) {
  * Supprime tous les déclencheurs du projet.
  */
 function deleteAllTriggers() {
-  try {
-    const allTriggers = ScriptApp.getProjectTriggers();
-    for (const trigger of allTriggers) {
-      ScriptApp.deleteTrigger(trigger);
-    }
-  } catch (e) {
-    uiHandleException('deleteAllTriggers', e);
-  }
+  deleteTriggersByFunction();
 }
 
 /**
