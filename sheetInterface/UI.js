@@ -161,7 +161,7 @@ function openTriggerFrequencyDialog() {
     htmlTemplate.selectedFrequency = getStoredTriggerFrequency();
     const htmlOutput = htmlTemplate.evaluate()
       .setWidth(400)
-      .setHeight(350);
+      .setHeight(430);
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Configuration de la mise à jour automatique');
   } catch (e) {
     uiHandleException('openTriggerFrequencyDialog', e);

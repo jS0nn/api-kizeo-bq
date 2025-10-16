@@ -55,6 +55,51 @@ function configurerDeclencheurHoraire(valeur, type) {
   }
 }
 
+function configurerDeclencheurQuotidienAvecHeure(heure) {
+  try {
+    deleteTriggersByFunction(MAIN_TRIGGER_FUNCTION);
+    const parsedHour = Number(heure);
+    if (!Number.isFinite(parsedHour)) {
+      throw new Error(`Heure de déclenchement invalide: ${heure}`);
+    }
+    const normalizedHour = Math.min(23, Math.max(0, Math.floor(parsedHour)));
+    const trigger = ScriptApp.newTrigger(MAIN_TRIGGER_FUNCTION).timeBased().everyDays(1).atHour(normalizedHour);
+    trigger.create();
+    Logger.log(`Déclencheur configuré: chaque jour à ${normalizedHour.toString().padStart(2, '0')}h00`);
+  } catch (e) {
+    uiHandleException('configurerDeclencheurQuotidienAvecHeure', e, { heure });
+  }
+}
+
+function configurerDeclencheurHebdomadaire(codeJour, heure) {
+  try {
+    deleteTriggersByFunction(MAIN_TRIGGER_FUNCTION);
+    if (!codeJour) {
+      throw new Error('Code jour manquant pour le déclencheur hebdomadaire');
+    }
+    const normalizedCode = codeJour.toUpperCase();
+    const jourMap = WEEKDAY_CODE_MAP[normalizedCode];
+    if (!jourMap) {
+      throw new Error(`Jour hebdomadaire inconnu: ${codeJour}`);
+    }
+    const parsedHour = Number(heure);
+    if (!Number.isFinite(parsedHour)) {
+      throw new Error(`Heure de déclenchement invalide: ${heure}`);
+    }
+    const normalizedHour = Math.min(23, Math.max(0, Math.floor(parsedHour)));
+    ScriptApp.newTrigger(MAIN_TRIGGER_FUNCTION)
+      .timeBased()
+      .onWeekDay(jourMap.scriptEnum)
+      .atHour(normalizedHour)
+      .create();
+    Logger.log(
+      `Déclencheur configuré: chaque ${jourMap.label} à ${normalizedHour.toString().padStart(2, '0')}h00`
+    );
+  } catch (e) {
+    uiHandleException('configurerDeclencheurHebdomadaire', e, { codeJour, heure });
+  }
+}
+
 /**
  * Supprime tous les déclencheurs du projet.
  */

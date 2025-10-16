@@ -67,6 +67,17 @@ const TRIGGER_OPTIONS = {
   H24: { type: 'H', value: 24, label: 'Une fois par jour' },
   WD1: { type: 'D', value: 7, label: 'Une fois par semaine' }
 };
+const DAILY_CUSTOM_TRIGGER_PATTERN = /^H24@([01]\d|2[0-3])$/;
+const WEEKLY_CUSTOM_TRIGGER_PATTERN = /^WD1@([A-Z]{3})@([01]\d|2[0-3])$/;
+const WEEKDAY_CODE_MAP = {
+  MON: { scriptEnum: ScriptApp.WeekDay.MONDAY, label: 'lundi' },
+  TUE: { scriptEnum: ScriptApp.WeekDay.TUESDAY, label: 'mardi' },
+  WED: { scriptEnum: ScriptApp.WeekDay.WEDNESDAY, label: 'mercredi' },
+  THU: { scriptEnum: ScriptApp.WeekDay.THURSDAY, label: 'jeudi' },
+  FRI: { scriptEnum: ScriptApp.WeekDay.FRIDAY, label: 'vendredi' },
+  SAT: { scriptEnum: ScriptApp.WeekDay.SATURDAY, label: 'samedi' },
+  SUN: { scriptEnum: ScriptApp.WeekDay.SUNDAY, label: 'dimanche' }
+};
 const CONFIG_HEADERS = [
   'form_id',
   'form_name',
@@ -91,12 +102,36 @@ function sanitizeTriggerFrequency(raw) {
   if (lower === TRIGGER_DISABLED_KEY) return TRIGGER_DISABLED_KEY;
   const upper = stringValue.toUpperCase();
   if (TRIGGER_OPTIONS[upper]) return upper;
+  if (DAILY_CUSTOM_TRIGGER_PATTERN.test(upper)) return upper;
+  if (WEEKLY_CUSTOM_TRIGGER_PATTERN.test(upper)) return upper;
   return DEFAULT_TRIGGER_FREQUENCY;
 }
 
 function getTriggerOption(key) {
   if (!key) return null;
-  return TRIGGER_OPTIONS[key] || null;
+  if (TRIGGER_OPTIONS[key]) {
+    return TRIGGER_OPTIONS[key];
+  }
+  const customHour = parseCustomDailyHour(key);
+  if (customHour !== null) {
+    return {
+      type: 'CUSTOM_DAILY',
+      value: 24,
+      label: `Chaque jour à ${formatHourLabel(customHour)}`,
+      hour: customHour
+    };
+  }
+  const customWeekly = parseCustomWeekly(key);
+  if (customWeekly) {
+    return {
+      type: 'CUSTOM_WEEKLY',
+      value: 7,
+      label: `Chaque semaine le ${formatWeekdayLabel(customWeekly.dayCode)} à ${formatHourLabel(customWeekly.hour)}`,
+      dayCode: customWeekly.dayCode,
+      hour: customWeekly.hour
+    };
+  }
+  return null;
 }
 
 function describeTriggerOption(key) {
@@ -104,6 +139,12 @@ function describeTriggerOption(key) {
   if (key === TRIGGER_DISABLED_KEY) return 'désactivée';
   const option = getTriggerOption(key);
   if (!option) return key;
+  if (option.type === 'CUSTOM_DAILY' && typeof option.hour === 'number') {
+    return option.label;
+  }
+  if (option.type === 'CUSTOM_WEEKLY' && typeof option.hour === 'number') {
+    return option.label;
+  }
   const unit = option.type === 'M' ? 'minute' : 'heure';
   const plural = option.value > 1 ? 's' : '';
   return `${option.value} ${unit}${plural}`;
@@ -120,9 +161,54 @@ function configureTriggerFromKey(key) {
   if (!option) {
     throw new Error(`Fréquence de déclencheur inconnue: ${key}`);
   }
-  configurerDeclencheurHoraire(option.value, option.type);
+  if (option.type === 'CUSTOM_DAILY') {
+    configurerDeclencheurQuotidienAvecHeure(option.hour);
+  } else if (option.type === 'CUSTOM_WEEKLY') {
+    configurerDeclencheurHebdomadaire(option.dayCode, option.hour);
+  } else {
+    configurerDeclencheurHoraire(option.value, option.type);
+  }
   ensureDeduplicationTrigger();
   return option;
+}
+
+function parseCustomDailyHour(key) {
+  if (!key) return null;
+  const match = DAILY_CUSTOM_TRIGGER_PATTERN.exec(key.toUpperCase());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) {
+    return null;
+  }
+  return hour;
+}
+
+function formatHourLabel(hour) {
+  const normalized = Math.min(23, Math.max(0, Math.floor(hour)));
+  return `${normalized.toString().padStart(2, '0')}h00`;
+}
+
+function parseCustomWeekly(key) {
+  if (!key) return null;
+  const match = WEEKLY_CUSTOM_TRIGGER_PATTERN.exec(key.toUpperCase());
+  if (!match) return null;
+  const dayCode = match[1];
+  const hour = Number(match[2]);
+  if (!WEEKDAY_CODE_MAP[dayCode]) {
+    return null;
+  }
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) {
+    return null;
+  }
+  return { dayCode: dayCode, hour: hour };
+}
+
+function formatWeekdayLabel(dayCode) {
+  const entry = WEEKDAY_CODE_MAP[dayCode];
+  if (entry && entry.label) {
+    return entry.label;
+  }
+  return dayCode || 'jour';
 }
 
 function getStoredTriggerFrequency() {
