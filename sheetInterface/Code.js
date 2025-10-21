@@ -89,6 +89,7 @@ const CONFIG_HEADERS = [
   'last_answer_time',
   'last_run_at',
   'last_saved_row_count_saved',
+  'last_run_duration_ms',
   'trigger_frequency'
 ];
 const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'action'];
@@ -600,6 +601,8 @@ function main() {
 
   setScriptProperties('enCours');
 
+  const runStart = Date.now();
+
   try {
     const tableName = validation.config.bq_table_name;
     let aliasPart = tableName;
@@ -635,6 +638,7 @@ function main() {
 
     // ---------- Préparation BigQuery et ingestion ----------
     const processResult = libKizeo.processData(spreadsheetBdD, formulaire, action, batchLimit);
+    const runDurationMs = Math.max(0, Date.now() - runStart);
     const canPersistRun =
       processResult &&
       processResult.status !== 'ERROR' &&
@@ -649,6 +653,9 @@ function main() {
       const hasRowCount = typeof processResult.rowCount === 'number' && !Number.isNaN(processResult.rowCount);
       if (hasRowCount) {
         refreshedConfig.last_saved_row_count = processResult.rowCount;
+      }
+      if (Number.isFinite(runDurationMs)) {
+        refreshedConfig.last_run_duration_ms = runDurationMs;
       }
       if (processResult.runTimestamp) {
         refreshedConfig.last_run_at = processResult.runTimestamp;
