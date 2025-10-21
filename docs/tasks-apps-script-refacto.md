@@ -14,6 +14,7 @@
 - [ ] Éviter la double requête `data/unread` : partager la réponse entre `main()` (sheetInterface) et `processData`.
 - [ ] Injecter les dépendances (`SpreadsheetApp`, `BigQuery`, `DriveApp`) via paramètres ou wrappers pour faciliter les mocks.
 - [ ] Clarifier les responsabilités : écrire dans Sheets vs. pousser vers BigQuery, afin de pouvoir désactiver l’un sans impacter l’autre.
+- [ ] Ajouter un interrupteur de configuration (`ingest_bigquery`) pour piloter l’ingestion BigQuery sans modifier le code.
 
 ## 3. Configuration et secrets *(P1)*
 - [ ] Déplacer la lecture du token Kizeo vers `ScriptProperties` + cache local, supprimer le `openById` hardcodé (`lib/APIHandler`).

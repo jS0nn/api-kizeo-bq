@@ -150,11 +150,20 @@ function enregistrementUI(formulaire) {
       const existingConfig = readFormConfigFromSheet(targetSheet);
       const currentAction = existingConfig && existingConfig.action ? existingConfig.action.toString().trim() : '';
       const actionCode = currentAction || createActionCode();
+      const existingBatchLimit = sanitizeBatchLimitValue(existingConfig[CONFIG_BATCH_LIMIT_KEY]);
+      const resolvedBatchLimit =
+        existingBatchLimit !== null ? existingBatchLimit : DEFAULT_KIZEO_BATCH_LIMIT;
+      const resolvedIngestBigQuery = sanitizeBooleanConfigFlag(
+        existingConfig[CONFIG_INGEST_BIGQUERY_KEY],
+        true
+      );
       const finalConfig = Object.assign({}, existingConfig, {
         form_id: formulaireData.id,
         form_name: formulaireData.nom,
         bq_table_name: tableName,
-        action: actionCode
+        action: actionCode,
+        [CONFIG_BATCH_LIMIT_KEY]: resolvedBatchLimit,
+        [CONFIG_INGEST_BIGQUERY_KEY]: resolvedIngestBigQuery
       });
 
       writeFormConfigToSheet(targetSheet, finalConfig);

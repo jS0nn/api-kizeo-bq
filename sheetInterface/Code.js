@@ -35,6 +35,7 @@
 // Paramétrage de la limite d'ingestion Kizeo
 const DEFAULT_KIZEO_BATCH_LIMIT = 30;
 const CONFIG_BATCH_LIMIT_KEY = 'batch_limit';
+const CONFIG_INGEST_BIGQUERY_KEY = 'ingest_bigquery';
 
 function sanitizeBatchLimitValue(raw) {
   if (raw === null || raw === undefined) return null;
@@ -51,6 +52,30 @@ function getConfiguredBatchLimit(config) {
   const sanitized = sanitizeBatchLimitValue(raw);
   if (sanitized !== null) return sanitized;
   return DEFAULT_KIZEO_BATCH_LIMIT;
+}
+
+function normalizeBooleanConfigValue(raw, defaultValue) {
+  if (raw === null || raw === undefined || raw === '') {
+    return !!defaultValue;
+  }
+  if (typeof raw === 'boolean') {
+    return raw;
+  }
+  const normalized = raw.toString().trim().toLowerCase();
+  if (!normalized) {
+    return !!defaultValue;
+  }
+  if (['true', '1', 'yes', 'y', 'oui'].indexOf(normalized) !== -1) {
+    return true;
+  }
+  if (['false', '0', 'no', 'n', 'non'].indexOf(normalized) !== -1) {
+    return false;
+  }
+  return !!defaultValue;
+}
+
+function sanitizeBooleanConfigFlag(raw, defaultValue) {
+  return normalizeBooleanConfigValue(raw, defaultValue) ? 'true' : 'false';
 }
 
 // Configuration des déclencheurs temporels
@@ -84,6 +109,7 @@ const CONFIG_HEADERS = [
   'bq_table_name',
   'action',
   CONFIG_BATCH_LIMIT_KEY,
+  CONFIG_INGEST_BIGQUERY_KEY,
   'last_data_id',
   'last_update_time',
   'last_answer_time',
@@ -513,6 +539,11 @@ function validateFormConfig(rawConfig, sheet) {
       sanitizedBatchLimit !== null ? sanitizedBatchLimit : DEFAULT_KIZEO_BATCH_LIMIT;
   }
 
+  sanitized[CONFIG_INGEST_BIGQUERY_KEY] = sanitizeBooleanConfigFlag(
+    config[CONFIG_INGEST_BIGQUERY_KEY],
+    true
+  );
+
   const tableNameCandidate =
     config.bq_table_name !== undefined && config.bq_table_name !== null
       ? String(config.bq_table_name).trim()
@@ -637,7 +668,9 @@ function main() {
     const nouvellesDonnees = Array.isArray(unreadResp.data.data) ? unreadResp.data.data : [];
 
     // ---------- Préparation BigQuery et ingestion ----------
-    const processResult = libKizeo.processData(spreadsheetBdD, formulaire, action, batchLimit);
+    const processResult = libKizeo.processData(spreadsheetBdD, formulaire, action, batchLimit, {
+      unreadPayload: unreadResp.data
+    });
     const runDurationMs = Math.max(0, Date.now() - runStart);
     const canPersistRun =
       processResult &&
