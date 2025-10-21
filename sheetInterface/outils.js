@@ -17,6 +17,17 @@ function deleteTriggersByFunction(functionName) {
 
 function ensureDeduplicationTrigger() {
   try {
+    let disableDedup = false;
+    if (typeof getStoredTriggerFrequency === 'function') {
+      const currentFrequency = getStoredTriggerFrequency();
+      const disabledKey = typeof TRIGGER_DISABLED_KEY === 'undefined' ? 'none' : TRIGGER_DISABLED_KEY;
+      disableDedup = currentFrequency === disabledKey;
+    }
+    if (disableDedup) {
+      deleteTriggersByFunction(DEDUP_TRIGGER_FUNCTION);
+      Logger.log('Déclencheur de déduplication non recréé (fréquence désactivée).');
+      return;
+    }
     deleteTriggersByFunction(DEDUP_TRIGGER_FUNCTION);
     ScriptApp.newTrigger(DEDUP_TRIGGER_FUNCTION).timeBased().everyHours(DEDUP_TRIGGER_INTERVAL_HOURS).create();
     Logger.log('Déclencheur de déduplication configuré: toutes les heures.');

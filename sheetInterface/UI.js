@@ -12,6 +12,8 @@ function afficheMenu() {
       .addItem('Actualiser BigQuery', 'majSheet')
       .addItem('Forcer la déduplication BigQuery', 'launchManualDeduplication')
       .addItem('Configurer la mise à jour automatique', 'openTriggerFrequencyDialog')
+      .addSeparator()
+      .addItem('Supprimer les déclencheurs automatiques', 'confirmDeleteTriggers')
       .addToUi();
   } catch (e) {
     libKizeo.handleException('afficheMenu', e);
@@ -32,6 +34,37 @@ function chargeSelectForm() {
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, ' ');
   } catch (e) {
     libKizeo.handleException('chargeSelectForm', e);
+  }
+}
+
+function confirmDeleteTriggers() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert(
+    'Confirmation',
+    "Souhaitez-vous supprimer tous les déclencheurs automatiques ? Cette action arrête les mises à jour planifiées et la déduplication.",
+    ui.ButtonSet.YES_NO
+  );
+
+  if (response !== ui.Button.YES) {
+    return;
+  }
+
+  try {
+    const mainHandler = typeof MAIN_TRIGGER_FUNCTION === 'undefined' ? 'main' : MAIN_TRIGGER_FUNCTION;
+    const dedupHandler =
+      typeof DEDUP_TRIGGER_FUNCTION === 'undefined' ? 'runBigQueryDeduplication' : DEDUP_TRIGGER_FUNCTION;
+    deleteTriggersByFunction(mainHandler);
+    deleteTriggersByFunction(dedupHandler);
+    setStoredTriggerFrequency(TRIGGER_DISABLED_KEY);
+    persistTriggerFrequencyToSheet(TRIGGER_DISABLED_KEY);
+    ui.alert(
+      'Information',
+      'Les déclencheurs automatiques ont été supprimés. Les mises à jour planifiées et la déduplication sont désormais stoppées.',
+      ui.ButtonSet.OK
+    );
+  } catch (e) {
+    uiHandleException('confirmDeleteTriggers', e);
+    ui.alert('Erreur', 'La suppression des déclencheurs a échoué. Consultez les journaux pour plus de détails.', ui.ButtonSet.OK);
   }
 }
 

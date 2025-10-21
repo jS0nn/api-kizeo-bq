@@ -152,8 +152,11 @@ function describeTriggerOption(key) {
 
 function configureTriggerFromKey(key) {
   if (key === TRIGGER_DISABLED_KEY) {
-    deleteTriggersByFunction(MAIN_TRIGGER_FUNCTION);
-    ensureDeduplicationTrigger();
+    const mainHandler = typeof MAIN_TRIGGER_FUNCTION === 'undefined' ? 'main' : MAIN_TRIGGER_FUNCTION;
+    const dedupHandler =
+      typeof DEDUP_TRIGGER_FUNCTION === 'undefined' ? 'runBigQueryDeduplication' : DEDUP_TRIGGER_FUNCTION;
+    deleteTriggersByFunction(mainHandler);
+    deleteTriggersByFunction(dedupHandler);
     console.log('Déclencheurs automatiques désactivés.');
     return null;
   }
