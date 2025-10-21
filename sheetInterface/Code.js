@@ -88,8 +88,8 @@ const CONFIG_HEADERS = [
   'last_update_time',
   'last_answer_time',
   'last_run_at',
-  'last_saved_row_count_saved',
-  'last_run_duration_ms',
+  'last_saved_row_count',
+  'last_run_duration_s',
   'trigger_frequency'
 ];
 const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'action'];
@@ -655,7 +655,8 @@ function main() {
         refreshedConfig.last_saved_row_count = processResult.rowCount;
       }
       if (Number.isFinite(runDurationMs)) {
-        refreshedConfig.last_run_duration_ms = runDurationMs;
+        const runDurationSeconds = Math.round(runDurationMs / 1000);
+        refreshedConfig.last_run_duration_s = Math.max(0, runDurationSeconds);
       }
       if (processResult.runTimestamp) {
         refreshedConfig.last_run_at = processResult.runTimestamp;
