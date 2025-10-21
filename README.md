@@ -18,8 +18,12 @@
 ├── lib/                # Bibliothèque Apps Script (libKizeo)
 │   ├── BigQuery.js     # Ingestion, audit et déduplication BigQuery
 │   ├── APIHandler.js   # Appels Kizeo (UrlFetch)
-│   ├── GestionDonneesMaJ.js # Synchronisation feuilles Google Sheets
-│   └── zz_*.js         # Scénarios exploratoires ou de test manuel
+│   ├── Outils.js       # Config formulaire, helpers feuille principale
+│   ├── Tableaux.js     # Gestion des sous-formulaires & onglets dédiés
+│   ├── Images.js       # Téléchargement et archivage des médias Drive
+│   ├── ListesExternes.js # Synchronisation des listes externes Kizeo
+│   ├── zz_Tests.js     # Scénarios exploratoires ou de test manuel
+│   └── appsscript.json # Manifest Apps Script de la librairie
 ├── sheetInterface/     # Script lié au classeur et assets HtmlService
 │   ├── Code.js         # Menus, triggers, orchestrateur `main`
 │   ├── UI.js           # Logique UI (modales, sélection formulaire)
@@ -55,6 +59,11 @@
 - Aucun runner automatique : utiliser `zz_Tests.js` ou `sheetInterface/ZZ_tests.js` pour ajouter des scénarios `zzDescribeScenario()`.
 - Exécution distante via `clasp run zzDescribeScenario` après mise à jour (`clasp push`).
 - Vérifications attendues : écriture BigQuery (`BigQuery.Tables.list`), mutations Sheets et exports Drive.
+
+## Dépannage
+- **Script bloqué (`etatExecution = 'enCours'`)** : exécuter la fonction `setScriptPropertiesTermine()` depuis l’éditeur Apps Script ou lancer `clasp run setScriptPropertiesTermine`. Elle délègue à `setScriptProperties('termine')` et libère le verrou manuel sans toucher aux autres propriétés.
+- **Journalisation d’une réponse volumineuse** : utiliser `emailLogger()` dans `lib/Outils.js` ou, pour réduire le payload, les helpers `reduireJSON*` déplacés dans `lib/zz_Tests.js` (scénarios manuels uniquement).
+- **Inspection ponctuelle d’une ingestion** : privilégier les fonctions `zzDescribeScenario()` dans `zz_Tests.js` / `sheetInterface/ZZ_tests.js` afin d’isoler le contexte plutôt que de modifier la librairie.
 
 ## Bonnes pratiques de commit & PR
 - Messages courts, impératif, scope explicite (`lib: refresh dedupe helpers`).

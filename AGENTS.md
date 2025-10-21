@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-The repository contains two Apps Script projects. `lib/` hosts the reusable library consumed by production spreadsheets; key modules include `BigQuery.js` for dataset bootstrapping, `APIHandler.js` for Kizeo calls, and `GestionDonneesMaJ.js` for sheet synchronization. `sheetInterface/` holds the bound spreadsheet script and HtmlService assets (`UI.js`, `timeIntervalSelector.html`) that expose menus, dialogs, and triggers. Keep exploratory code in the existing `zz_*.js` files and capture architecture decisions in `context-kizeo.md`.
+The repository contains two Apps Script projects. `lib/` hosts the reusable library consumed by production spreadsheets; key modules include `BigQuery.js` pour l’ingestion BigQuery, `APIHandler.js` pour les appels Kizeo et le tandem `Outils.js`/`Tableaux.js` pour la synchronisation Sheets. `sheetInterface/` holds the bound spreadsheet script and HtmlService assets (`UI.js`, `timeIntervalSelector.html`) that expose menus, dialogs, and triggers. Keep exploratory code in the existing `zz_*.js` files and capture architecture decisions in `context-kizeo.md`.
 
 ## Build, Sync & Development Commands
 Work inside the relevant subdirectory before running commands. Use `npm install -g @google/clasp` once, then `clasp login` with the right Google account. Typical flows are `cd lib && clasp pull` to fetch the latest scripts, edit locally, then `clasp push` to upload. For the spreadsheet UI, run the same commands inside `sheetInterface/`. To trigger remote execution, call `clasp run main` (sheet) or `clasp run bqIngestParentBatch` (library) after pushing.

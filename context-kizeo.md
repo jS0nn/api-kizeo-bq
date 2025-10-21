@@ -40,7 +40,6 @@ flowchart LR
         L4[gestionTableaux]
         L5[gestionChampImage]
         L6[majListeExterne]
-        L7[gestionDesDonneesMaJ]
     end
 
     subgraph SheetBoundScript["Script lié au Sheet"]
@@ -76,7 +75,6 @@ flowchart LR
     L5 -->|DriveApp| D1
     S2 --> S4 --> D1
     L6 --> KizeoAPI
-    L7 --> G1
 ```
 
 ```mermaid
@@ -109,7 +107,6 @@ sequenceDiagram
     alt Fin de file
         Lib->>Kizeo: GET /lists
         Lib->>Kizeo: PUT /lists/{listId}
-        Lib->>Sheet: gestionDesDonneesMaJ()
     end
     Sheet->>Drive: exportPdfBlob/exportMedias (si champs driveexport)
 ```
@@ -179,7 +176,7 @@ erDiagram
 ### Arborescences
 | Répertoire | Contenu |
 |---|---|
-| `lib/` | `0_Data.js`, `APIHandler.js`, `DataNonLues.js`, `GestionDonneesMaJ.js`, `GestionErreurs.gs.js`, `Images.js`, `ListesExternes.js`, `Outils.js`, `Tableaux.js`, `VarGlobales.js`, `zz_archives.js`. |
+| `lib/` | `0_Data.js`, `APIHandler.js`, `BigQuery.js`, `GestionErreurs.gs.js`, `Images.js`, `ListesExternes.js`, `Outils.js`, `Tableaux.js`, `VarGlobales.js`, `zz_Tests.js`, `appsscript.json`. |
 | `sheetInterface/` | `Code.js`, `outils.js`, `UI.js`, `appsscript.json`, `afficheSelectForm.html`, `timeIntervalSelector.html`, `ZZ_tests.js`. |
 
 ### Manifests Apps Script
@@ -195,7 +192,7 @@ erDiagram
 | Mapping Sheet | Normalisation données, entêtes dynamiques, sous-formulaires, conversions | `lib/0_Data.js`, `lib/Tableaux.js` | `saveDataToSheet`, `prepareDataToRowFormat` | — | `SpreadsheetApp`, `DriveApp` |
 | Médias Drive | Télécharger blobs (photos/signatures), créer dossiers, exporter PDF | `lib/Images.js`, `sheetInterface/Code.js` | `gestionChampImage`, `exportPdfBlob`, `exportMedias` | — | `DriveApp`, `UrlFetchApp` |
 | Listes externes | Mettre à jour tags Kizeo après traitement complet | `lib/ListesExternes.js` | `majListeExterne` | — | `requeteAPIDonnees` |
-| Déduplication & maintenance | Supprimer doublons (`Sheets`, `BigQuery`), appliquer formats | `lib/GestionDonneesMaJ.js`, `lib/Outils.js`, `lib/BigQuery.js` | `gestionDesDonneesMaJ`, `bqPurgeDuplicateParentRows`, `bqPurgeDuplicateSubTableRows` | — | `SpreadsheetApp`, `BigQuery` |
+| Déduplication & maintenance | Purger les doublons côté BigQuery, surveiller les buffers streaming | `lib/BigQuery.js` | `bqPurgeDuplicateParentRows`, `bqPurgeDuplicateSubTableRows` | — | `BigQuery` |
 | Gestion erreurs | Journaliser et notifier par mail | `lib/GestionErreurs.gs.js` | `handleException` | — | `MailApp`, `ScriptApp` |
 | UI & scheduling | Menu Sheets, modales HTML, sélection formulaire, déclencheurs | `sheetInterface/UI.js`, `sheetInterface/outils.js` | `afficheMenu`, `chargeSelectForm`, `enregistrementUI`, `configurerDeclencheurHoraire` | `onOpen`, time-based | `HtmlService`, `PropertiesService` |
 | Orchestrateur | Boucle sur formulaires, valide la config, lance ingestion, exports Drive, gère verrou `etatExecution` | `sheetInterface/Code.js` | `main` | Déclencheur horaire configurable | `libKizeo`, `DriveApp`, `PropertiesService` |
@@ -203,7 +200,7 @@ erDiagram
 Lien bibliothèque → script : le script lié appelle les fonctions exposées par la librairie `libKizeo` (ex. `libKizeo.processData` dans `sheetInterface/Code.js:173`, `libKizeo.handleException` dans `sheetInterface/UI.js:11`).
 
 ## Function Inventory
-**Sommaire rapide (A→Z)** : `afficheMenu`, `appendRowsToSheet`, `chargeSelectForm`, `chargelisteFormulaires`, `configurerDeclencheurHoraire`, `createHyperlinkToSheet`, `createNewRows`, `deleteAllTriggers`, `emailLogger`, `enregistrementUI`, `exportMedias`, `exportPdfBlob`, `filterDuplicates`, `formatNumberAllSheets`, `getColumnIndices`, `getDataFromFields`, `getEtatExecution`, `getNewHeaders`, `getOrCreateFolder`, `getOrCreateHeaders`, `getOrCreateSheet`, `getOrCreateSubFolder`, `getValuesResponseId`, `gestionChampImage`, `gestionDesDonneesMaJ`, `gestionFeuilles`, `gestionTableaux`, `handleException`, `handleResponses`, `isNumeric`, `main`, `majListeExterne`, `majSheet`, `marquerReponseNonLues`, `onOpen`, `openTriggerFrequencyDialog`, `prepareDataForSheet`, `prepareDataToRowFormat`, `prepareSheet`, `processData`, `processIntervalChoice`, `requeteAPIDonnees`, `saveBlobToFolder`, `saveDataToSheet`, `setScriptProperties`, `setScriptPropertiesTermine`, `writeData`.
+**Sommaire rapide (A→Z)** : `afficheMenu`, `appendRowsToSheet`, `chargeSelectForm`, `chargelisteFormulaires`, `configurerDeclencheurHoraire`, `createHyperlinkToSheet`, `createNewRows`, `deleteAllTriggers`, `emailLogger`, `enregistrementUI`, `exportMedias`, `exportPdfBlob`, `getColumnIndices`, `getDataFromFields`, `getEtatExecution`, `getNewHeaders`, `getOrCreateFolder`, `getOrCreateHeaders`, `getOrCreateSheet`, `getOrCreateSubFolder`, `gestionChampImage`, `gestionFeuilles`, `gestionTableaux`, `handleException`, `handleResponses`, `isNumeric`, `main`, `majListeExterne`, `majSheet`, `onOpen`, `openTriggerFrequencyDialog`, `prepareDataForSheet`, `prepareDataToRowFormat`, `prepareSheet`, `processData`, `processIntervalChoice`, `requeteAPIDonnees`, `saveBlobToFolder`, `saveDataToSheet`, `setScriptProperties`, `setScriptPropertiesTermine`.
 
 | Function | File:Line | Purpose | Inputs | Outputs | Side effects | Calls | Called by | Errors/Retry |
 |---|---|---|---|---|---|---|---|---|
@@ -220,8 +217,6 @@ Lien bibliothèque → script : le script lié appelle les fonctions exposées p
 | `enregistrementUI(formulaire)` | `sheetInterface/UI.js:62` | Prépare un formulaire sélectionné et lance `main`. | `{id, nom}` | — | Met à jour ScriptProperties, appelle `libKizeo.gestionFeuilles` puis `main`. | `Session.getActiveUser`, `setScriptProperties`, `libKizeo.gestionFeuilles`, `main` | Soumission UI | `handleException`. |
 | `exportMedias(mediaList, targetFolderId)` | `sheetInterface/Code.js:100` | Copie les médias collectés dans un sous-dossier Drive `media`. | `Array`, `string` | — | Copie de fichiers Drive. | `getOrCreateSubFolder`, `DriveApp.getFileById` | `main` | Try/catch interne (log), pas de retry. |
 | `exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId)` | `sheetInterface/Code.js:89` | Sauvegarde un export PDF dans Drive avec nom horodaté. | `string`, `string`, `Blob`, `string` | — | Écriture Drive via `libKizeo.saveBlobToFolder`. | `libKizeo.saveBlobToFolder` | `main` | Exceptions remontées (catch dans `main`). |
-| `filterDuplicates(data)` | `lib/GestionDonneesMaJ.js:25` | Identifie les lignes à supprimer (doublons `form_unique_id`). | `Array<Array>` | `Array<number>` | — | — | `gestionDesDonneesMaJ` | `throw` si colonne absente. |
-| `formatNumberAllSheets(spreadsheet)` | `lib/Outils.js:90` | Applique un format numérique commun. | `Spreadsheet` | — | `setNumberFormat` sur chaque feuille. | — | Usage manuel/tests | Pas de gestion particulière. |
 | `getColumnIndices(values, headers, existingHeaders, sheet)` | `lib/0_Data.js:250` | Associe chaque valeur à une colonne, ajoute entêtes manquantes. | `Array`, `Array`, `Array`, `Sheet` | `Array<number>` ou `null` | Peut écrire de nouveaux entêtes. | — | `saveDataToSheet` | `handleException`, retourne `null` en cas d’erreur. |
 | `getDataFromFields(dataResponse)` | `lib/0_Data.js:202` | Transforme `fields` en tableaux `labels/types/valeurs`. | `Object` | `Array[3][]` ou `null` | — | — | `prepareDataForSheet` | `handleException`. |
 | `getEtatExecution()` | `sheetInterface/Code.js:60` | Lit la ScriptProperty `etatExecution`. | — | `string` ou `null` | — | `PropertiesService.getScriptProperties` | `main` | — |
@@ -230,18 +225,15 @@ Lien bibliothèque → script : le script lié appelle les fonctions exposées p
 | `getOrCreateHeaders(sheet, firstRow)` | `lib/Tableaux.js:51` | Initialise ou complète les entêtes d’un sous-onglet. | `Sheet`, `Object` | `Array<string>` | `setValues` sur ligne 1. | `getNewHeaders` | `gestionTableaux` | Exceptions non catchées. |
 | `getOrCreateSheet(spreadsheet, sheetName)` | `lib/Tableaux.js:36` | Retourne la feuille demandée ou la crée. | `Spreadsheet`, `string` | `Sheet` | `insertSheet` si absent. | — | `gestionTableaux` | Exceptions propagées. |
 | `getOrCreateSubFolder(parentFolderId, subFolderName)` | `sheetInterface/Code.js:73` | Crée ou récupère un sous-dossier Drive pour les exports. | `string`, `string` | `string` | I/O Drive. | `DriveApp.getFoldersByName`, `createFolder` | `exportMedias` | — |
-| `getValuesResponseId(sheetEnCours)` | `lib/DataNonLues.js:31` | Extrait les valeurs de la colonne `id` (sans header). | `Sheet` | `Array` | — | — | `marquerReponseNonLues` | Log console si colonne manquante. |
 | `gestionChampImage(idFormulaire, idReponse, nomChamp, idImage, spreadsheet)` | `lib/Images.js:11` | Télécharge des médias, crée dossier image, renvoie formule `HYPERLINK`. | `string`, `string`, `string`, `string`, `Spreadsheet` | `string` ou `null` | Requêtes API + Drive. | `requeteAPIDonnees`, `getOrCreateFolder`, `saveBlobToFolder` | `prepareDataToRowFormat`, `createNewRows` | `handleException`. |
-| `gestionDesDonneesMaJ(sheet)` | `lib/GestionDonneesMaJ.js:5` | Supprime les doublons de la feuille (basé sur `form_unique_id`). | `Sheet` | — | Peut supprimer des lignes. | `filterDuplicates`, `removeRows` | `handleResponses` | Exceptions non catchées. |
 | `gestionFeuilles(spreadsheet, formulaire)` | `lib/Outils.js:9` | Ajoute/renomme l’onglet du formulaire et supprime la feuille par défaut. | `Spreadsheet`, `{nom,id}` | `bool` (feuille vide) | Création/renommage/suppression de feuilles. | `SpreadsheetApp` | `enregistrementUI`, tests | `handleException`. |
 | `gestionTableaux(spreadsheet, formulaire, idReponse, nomTableau, tableau)` | `lib/Tableaux.js:17` | Gère la persistence des sous-formulaires dans un onglet dédié et renvoie un lien. | `Spreadsheet`, `Object`, `string`, `string`, `Array<Object>` | `string` ou `null` | Création feuille, insertion valeurs, liens. | `getOrCreateSheet`, `getOrCreateHeaders`, `createNewRows`, `appendRowsToSheet`, `createHyperlinkToSheet` | `prepareDataToRowFormat` | `handleException`. |
 | `handleException(functionName, error, context)` | `lib/GestionErreurs.gs.js:8` | Centralise les erreurs (console + email avec contexte). | `string`, `Error`, `Object` | — | Email via `MailApp`. | `MailApp.sendEmail`, `SpreadsheetApp`, `ScriptApp` | Appelé par la plupart des try/catch | Pas de retry automatique. |
-| `handleResponses(spreadsheet, formulaire, apiPath, dataEnCours, action, medias)` | `lib/0_Data.js:41` | Traite la liste des IDs non lus, charge les réponses complètes, écrit le Sheet, marque comme lu, met à jour listes externes. | `Spreadsheet`, `Object`, `string`, `Object`, `string`, `Array` | `Object` ou `null` | API fetch multiples, `appendRow`, `markasread`, synchronisation listes, dédup. | `requeteAPIDonnees`, `saveDataToSheet`, `majListeExterne`, `gestionDesDonneesMaJ` | `processData` | `handleException` (retour `null`). |
+| `handleResponses(spreadsheet, formulaire, apiPath, dataEnCours, action, medias)` | `lib/0_Data.js:41` | Traite la liste des IDs non lues, charge les réponses complètes, écrit le Sheet, marque comme lues, met à jour listes externes. | `Spreadsheet`, `Object`, `string`, `Object`, `string`, `Array` | `Object` ou `null` | API fetch multiples, `appendRow`, `markasread`, synchronisation listes. | `requeteAPIDonnees`, `saveDataToSheet`, `majListeExterne` | `processData` | `handleException` (retour `null`). |
 | `isNumeric(value)` | `lib/Outils.js:180` | Détermine si une valeur est numérique (parseFloat). | `any` | `bool` | — | `parseFloat` | `prepareDataForSheet`, `createNewRows` | — |
 | `main()` | `sheetInterface/Code.js:137` | Orchestrateur principal : boucle sur chaque onglet formulaire, déclenche ingestion, exports Drive, gère verrou `etatExecution`. | — | — | Appels API, modifications Sheet, copies Drive, updates ScriptProperties. | `getEtatExecution`, `setScriptProperties`, `libKizeo.requeteAPIDonnees`, `libKizeo.processData`, `exportPdfBlob`, `exportMedias`, `libKizeo.handleException` | Déclencheur horaire, actions UI | Try/catch global + remise `etatExecution`. |
 | `majListeExterne(formulaire, dataEnCours)` | `lib/ListesExternes.js:21` | Met à jour les listes externes Kizeo en se basant sur la dernière ligne importée. | `Object`, `Object` | `"Mise A Jour OK"` ou `null` | GET/PUT `/lists`. | `requeteAPIDonnees`, `replaceKizeoData` | `handleResponses` | `handleException`. |
 | `majSheet()` | `sheetInterface/UI.js:149` | Déclenche manuellement `main`. | — | — | — | `main` | Menu utilisateur | — |
-| `marquerReponseNonLues(sheetEnCours, action)` | `lib/DataNonLues.js:6` | Réinitialise des réponses en les marquant non lues pour une action donnée. | `Sheet`, `string` | — | POST `/markasunreadbyaction`. | `getValuesResponseId`, `requeteAPIDonnees` | Scripts de test uniquement | Pas de try/catch interne. |
 | `onOpen()` | `sheetInterface/Code.js:38` | Ajoute le menu et affiche un avertissement sur le nom du fichier. | — | — | UI alerts. | `afficheMenu`, `SpreadsheetApp.getUi` | Trigger `onOpen` | — |
 | `prepareDataForSheet(dataResponse)` | `lib/0_Data.js:151` | Construit `headers` et `values` à partir d’une réponse Kizeo. | `Object` | `[headers, values, baseData, tabFields]` ou `null` | — | `getDataFromFields`, `isNumeric` | `saveDataToSheet` | `handleException`. |
 | `prepareDataToRowFormat(spreadsheet, values, columnIndices, baseData, tabFields, formulaire, dataResponse, medias)` | `lib/0_Data.js:280` | Assemble la ligne finale pour la feuille (inclut sous-formulaires et médias). | `Spreadsheet`, `Array`, `Array`, `Array`, `Array`, `Object`, `Object`, `Array` | `Array` ou `null` | Téléchargement médias, ajout hyperliens, appelle `gestionTableaux`. | `gestionTableaux`, `gestionChampImage` | `saveDataToSheet` | `handleException`. |
@@ -255,7 +247,6 @@ Lien bibliothèque → script : le script lié appelle les fonctions exposées p
 | `saveDataToSheet(spreadsheetBdD, dataResponse, formulaire, sheetFormulaire, medias)` | `lib/0_Data.js:111` | Écrit une réponse dans l’onglet principal et enrichit le collecteur de médias. | `Spreadsheet`, `Object`, `Object`, `Sheet`, `Array` | `{rowEnCours, existingHeaders}` ou `null` | `appendRow`, conversions, collecte médias. | `prepareDataForSheet`, `prepareSheet`, `getColumnIndices`, `prepareDataToRowFormat` | `handleResponses` | `handleException`. |
 | `setScriptProperties(etat)` | `sheetInterface/Code.js:55` | Met à jour la ScriptProperty `etatExecution`. | `string` | — | Persistant via `PropertiesService`. | — | `main`, `enregistrementUI` | — |
 | `setScriptPropertiesTermine()` | `sheetInterface/outils.js:46` | Raccourci pour remettre `etatExecution` à `termine`. | — | — | Écrit ScriptProperty. | `setScriptProperties` | Utilitaires/manuels | — |
-| `writeData(spreadsheetBdD, values, columnIndices, formulaire, dataResponse, sheetFormulaire)` | `lib/zz_archives.js:12` | Ancienne fonction d’écriture (non utilisée). | Divers | `Array` ou `null` | `appendRow` | `getRowValues` (non défini ici) | Plus référencée (archive) | `handleException`. |
 
 ### Call Graph global
 ```mermaid
@@ -277,7 +268,6 @@ graph TD
         lib_handleResponses --> lib_requeteAPIDonnees
         lib_handleResponses --> lib_saveDataToSheet
         lib_handleResponses --> lib_majListeExterne
-        lib_handleResponses --> lib_gestionDesDonneesMaJ
         lib_saveDataToSheet --> lib_prepareDataForSheet
         lib_saveDataToSheet --> lib_prepareSheet
         lib_saveDataToSheet --> lib_getColumnIndices
@@ -301,19 +291,19 @@ graph TD
 ```
 
 ### Matrice d’appels
-| Caller \ Callee | `lib.requeteAPIDonnees` | `lib.processData` | `lib.handleResponses` | `lib.saveDataToSheet` | `lib.prepareDataToRowFormat` | `lib.gestionTableaux` | `lib.gestionChampImage` | `lib.majListeExterne` | `lib.gestionDesDonneesMaJ` | `exportPdfBlob` | `exportMedias` | `configurerDeclencheurHoraire` | `deleteAllTriggers` |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `main` | ✓ | ✓ | — | — | — | — | — | — | — | ✓ | ✓ | — | — |
-| `enregistrementUI` | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `processData` | — | — | ✓ | — | — | — | — | — | — | — | — | — | — |
-| `handleResponses` | ✓ | — | — | ✓ | — | — | — | ✓ | ✓ | — | — | — | — |
-| `saveDataToSheet` | — | — | — | — | ✓ | — | — | — | — | — | — | — | — |
-| `prepareDataToRowFormat` | — | — | — | — | — | ✓ | ✓ | — | — | — | — | — | — |
-| `gestionTableaux` | — | — | — | — | — | — | ✓ | — | — | — | — | — | — |
-| `gestionChampImage` | ✓ | — | — | — | — | — | — | — | — | — | — | — | — |
-| `majListeExterne` | ✓ | — | — | — | — | — | — | — | — | — | — | — | — |
-| `configurerDeclencheurHoraire` | — | — | — | — | — | — | — | — | — | — | — | — | ✓ |
-| `processIntervalChoice` | — | — | — | — | — | — | — | — | — | — | — | ✓ | ✓ |
+| Caller \ Callee | `lib.requeteAPIDonnees` | `lib.processData` | `lib.handleResponses` | `lib.saveDataToSheet` | `lib.prepareDataToRowFormat` | `lib.gestionTableaux` | `lib.gestionChampImage` | `lib.majListeExterne` | `exportPdfBlob` | `exportMedias` | `configurerDeclencheurHoraire` | `deleteAllTriggers` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `main` | ✓ | ✓ | — | — | — | — | — | — | ✓ | ✓ | — | — |
+| `enregistrementUI` | — | — | — | — | — | — | — | — | — | — | — | — |
+| `processData` | — | — | ✓ | — | — | — | — | — | — | — | — | — |
+| `handleResponses` | ✓ | — | — | ✓ | — | — | — | ✓ | — | — | — | — |
+| `saveDataToSheet` | — | — | — | — | ✓ | — | — | — | — | — | — | — |
+| `prepareDataToRowFormat` | — | — | — | — | — | ✓ | ✓ | — | — | — | — | — |
+| `gestionTableaux` | — | — | — | — | — | — | ✓ | — | — | — | — | — |
+| `gestionChampImage` | ✓ | — | — | — | — | — | — | — | — | — | — | — |
+| `majListeExterne` | ✓ | — | — | — | — | — | — | — | — | — | — | — |
+| `configurerDeclencheurHoraire` | — | — | — | — | — | — | — | — | — | — | — | ✓ |
+| `processIntervalChoice` | — | — | — | — | — | — | — | — | — | — | ✓ | ✓ |
 
 ## Kizeo API Usage Map
 | Endpoint | Méthode | Authentification | Emplacement | Paramètres / Corps | Notes |
@@ -343,10 +333,10 @@ graph TD
 |---|---|
 | Feuilles principales | Un onglet `NomFormulaire || formId` par formulaire (`lib/Outils.js:9`). Colonnes de base + champs dynamiques. |
 | Sous-formulaires | Onglets `NomFormulaire || formId || NomSousForm`, liens depuis la feuille principale (`lib/Tableaux.js:17`). |
-| Clé d’unicité | `form_unique_id`, utilisée pour la déduplication (`lib/GestionDonneesMaJ.js:25`). |
+| Clé d’unicité | `form_unique_id`, utilisée par la déduplication BigQuery (`lib/BigQuery.js:1192`, `lib/BigQuery.js:1293`). |
 | Types implicites | Conversion numérique via `isNumeric`, dates conservées au format chaîne ISO. |
 | Formules | Liens Drive sous forme `=HYPERLINK(...)`; aucun calcul complexe. |
-| Performance | Ajout ligne par ligne (`appendRow`), nettoyage doublons après chaque import (`lib/0_Data.js:78`). |
+| Performance | Ajout ligne par ligne (`appendRow`) dans le Sheet, déduplication finale exécutée côté BigQuery (`bqPurgeDuplicateParentRows`). |
 
 ## UI & Interaction (Sheet)
 - Menu personnalisé (`afficheMenu`) avec options : sélectionner un formulaire, initialiser BigQuery, actualiser (`majSheet`), configurer la mise à jour automatique (plus de raccourcis cachés).
@@ -555,15 +545,6 @@ function handleResponses(spreadsheetBdD, formulaire, apiPath, dataEnCours, actio
       // On met à jour la liste externe avec les nouvelles données
       const listeAjour = majListeExterne(formulaire, dataEnCours);
       
-      //On vérifie les doublons éventuels sur toutes les feuilles du classeur
-      const sheets = spreadsheetBdD.getSheets();
-      for (let i = 0; i &lt; sheets.length; i++) {
-        gestionDesDonneesMaJ(sheets[i]);
-      }
-      
-      //On verifie les doublons eventuels
-      //gestionDesDonneesMaJ(spreadsheetBdD);
-
       if (listeAjour === null) {
         console.log('listeAjour === null')
         return null;
@@ -873,125 +854,6 @@ function requeteAPIDonnees(methode, type, donnees) {
 }
 </code></pre></details>
 
-<details><summary>lib/DataNonLues.js</summary>
-<pre><code>
-/**
- * Marque les réponses comme non lues dans le formulaire correspondant.
- *
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheetEnCours - La feuille de calcul en cours d'utilisation.
- */
-function marquerReponseNonLues(sheetEnCours,action) {
-  const ongletName = sheetEnCours.getName();
-  const ongletTabName = ongletName.split(' || ');
-  const formulaire = {
-    nom: ongletTabName[0],
-    id: ongletTabName[1]
-  };
-  
-  const responseID = getValuesResponseId(sheetEnCours);
-
-  if (responseID.length &gt; 0) {
-    // Marquer les données comme non lues
-    const dataNonLues = { "data_ids": responseID };
-    requeteAPIDonnees('POST', `/forms/${formulaire.id}/markasunreadbyaction/${action}`, dataNonLues);
-    console.log("Les données ont été marquées non lues")
-  }
-}
-
-/**
- * Récupère les valeurs de la colonne "id" (sans la première ligne) dans la feuille donnée.
- *
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheetEnCours - La feuille de calcul en cours d'utilisation.
- * @return {Array} Un tableau des valeurs de la colonne "id" (sans la première ligne).
- * @throws {Error} Si la colonne "id" n'est pas trouvée.
- */
-function getValuesResponseId(sheetEnCours) {
-  const data = sheetEnCours.getDataRange().getValues();
-  const headerRow = data[0];
-  
-  // Trouver l'index de la colonne dont le titre est "id"
-  const idColumnIndex = headerRow.indexOf("id");
-  if (idColumnIndex === -1) {
-    console.log('La colonne "id" n\'a pas été trouvée.');
-    return [];
-  }
-  
-  // Lire les valeurs de la colonne "id" (sans la première ligne)
-  return data.slice(1).map(row =&gt; row[idColumnIndex]);
-}
-</code></pre></details>
-
-<details><summary>lib/GestionDonneesMaJ.js</summary>
-<pre><code>
-/**
-Fonction principale pour charger les données, supprimer les doublons et mettre à jour la feuille.
-@param {GoogleAppsScript.Spreadsheet.Sheet} sheet La feuille Google Sheets à traiter.
-*/
-function gestionDesDonneesMaJ(sheet) {
-  console.log("Gestion des doublons")
-  // Charger les données de la feuille
-  const data = sheet.getDataRange().getValues();
-
-  // Supprimer les doublons dans la colonne "form_unique_id"
-  const rowsToRemove = filterDuplicates(data);
-
-  // Mettre à jour la feuille avec les données filtrées
-  if(rowsToRemove.length&gt;0){
-    removeRows(sheet, rowsToRemove)
-  }
-}
-
-
-/**
- * Trouve les indices des lignes où les 'form_unique_id' sont identiques, puis retourne les numéros des lignes à supprimer.
- * @param {Array&lt;Array&lt;any&gt;&gt;} data - Les données de la feuille.
- * @return {Array&lt;number&gt;} - Les numéros des lignes à supprimer.
- */
-function filterDuplicates(data) {
-  const header = data[0];
-  const uniqueIdIndex = header.indexOf('form_unique_id');
-  if (uniqueIdIndex === -1) {
-    throw new Error("La colonne 'form_unique_id' n'existe pas.");
-  }
-
-  const seen = {};
-  const rowsToRemove = [];
-
-  for (let i = 1; i &lt; data.length; i++) {
-    const row = data[i];
-    const uniqueId = row[uniqueIdIndex];
-    if (seen[uniqueId] !== undefined) {
-      // Ajouter le numéro de ligne précédent à la liste des suppressions
-      rowsToRemove.push(seen[uniqueId] + 1); // +1 pour correspondre au numéro de ligne réel
-    }
-    // Mettre à jour l'index avec l'index actuel, conservant ainsi la dernière occurrence
-    seen[uniqueId] = i;
-  }
-  if(rowsToRemove.length&gt;0){
-    console.log(`Lignes à supprimer : ${rowsToRemove}`)
-  }else{
-    console.log(`Aucune ligne à supprimer`)
-  }
-  
-  // On a les numéros des lignes à supprimer
-  return rowsToRemove;
-}
-
-/**
- * Supprime les lignes à partir de leurs numéros.
- * @param {Sheet} sheet - La feuille Google Sheets.
- * @param {Array&lt;number&gt;} rowsToRemove - Les numéros des lignes à supprimer.
- */
-function removeRows(sheet, rowsToRemove) {
-  rowsToRemove.sort((a, b) =&gt; b - a); // Trier les numéros en ordre décroissant pour éviter les problèmes lors de la suppression
-  rowsToRemove.forEach(rowNumber =&gt; {
-    sheet.deleteRow(rowNumber);
-  });
-}
-
-
-
-</code></pre></details>
 
 <details><summary>lib/GestionErreurs.gs.js</summary>
 <pre><code>
@@ -1394,93 +1256,6 @@ function emailLogger(javascriptObject, functionName = '', context = {}, fileName
 }
 
 /**
- * Appliquer un format nombre sur toute la feuille
- */
-function formatNumberAllSheets(spreadsheetBdD) {
-
-  // Récupérer toutes les feuilles du classeur
-  let sheets = spreadsheetBdD.getSheets();
-  
-  // Appliquer le format numérique à toutes les cellules de toutes les feuilles
-  for (let i = 0; i &lt; sheets.length; i++) {
-    let sheet = sheets[i];
-    let range = sheet.getDataRange();
-    range.setNumberFormat("#,###.##########"); // Permet de conserver jusqu'à 10 décimales significatives
-  }
-
-  Logger.log('Le format a été appliqué à toutes les feuilles.');
-}
-
-/**
- * Fonction pour réduire la taille d'un JSON en limitant le nombre d'éléments des tableaux
- * @param {Object} jsonObj - Le JSON à réduire
- * @param {number} nbMaxTab - Nombre maximum d'éléments par tableau
- * @return {Object} - Le JSON réduit
- */
-function reduireJSON2(jsonObj, nbMaxTab) {
-  // Fonction récursive pour parcourir et réduire le JSON
-  function reduire(obj) {
-    if (Array.isArray(obj)) {
-      // Si c'est un tableau, on le tronque et on applique la réduction à ses éléments
-      return obj.slice(0, nbMaxTab).map(reduire);
-    } else if (typeof obj === 'object' &amp;&amp; obj !== null) {
-      // Si c'est un objet, on parcourt ses propriétés
-      var newObj = {};
-      for (var key in obj) {
-        if (obj.hasOwnProperty(key)) {
-          newObj[key] = reduire(obj[key]);
-        }
-      }
-      return newObj;
-    } else {
-      // Pour les types primitifs, on retourne la valeur telle quelle
-      return obj;
-    }
-  }
-  // Appel initial de la fonction récursive
-  return reduire(jsonObj);
-}
-
-/**
- * Fonction pour réduire la taille d'un JSON en limitant le nombre d'éléments des tableaux et des objets spécifiques
- * @param {Object} jsonObj - Le JSON à réduire
- * @param {Object} limites - Objet contenant nbMaxTab et listeObjAReduire
- * @return {Object} - Le JSON réduit
- */
-function reduireJSON(jsonObj, limites) {
-  // Fonction récursive pour parcourir et réduire le JSON
-  function reduire(obj, key) {
-    if (Array.isArray(obj)) {
-      // Si c'est un tableau, on le tronque et on applique la réduction à ses éléments
-      return obj.slice(0, limites.nbMaxTab).map(function(item) {
-        return reduire(item, null); // Pas de clé pour les éléments du tableau
-      });
-    } else if (typeof obj === 'object' &amp;&amp; obj !== null) {
-      // Si c'est un objet
-      var newObj = {};
-      var keys = Object.keys(obj);
-      
-      if (key &amp;&amp; limites.listeObjAReduire &amp;&amp; limites.listeObjAReduire.hasOwnProperty(key)) {
-        // Si l'objet est dans listeObjAReduire, on limite le nombre de propriétés
-        var maxProps = limites.listeObjAReduire[key];
-        keys = keys.slice(0, maxProps);
-      }
-      
-      keys.forEach(function(k) {
-        newObj[k] = reduire(obj[k], k);
-      });
-      return newObj;
-    } else {
-      // Pour les types primitifs, on retourne la valeur telle quelle
-      return obj;
-    }
-  }
-  // Appel initial de la fonction récursive
-  return reduire(jsonObj, null);
-}
-
-
-/**
  * Détermine si la valeur est numérique.
  *
  * @param {any} value - La valeur à vérifier.
@@ -1640,40 +1415,6 @@ function createHyperlinkToSheet(spreadsheet, sheet) {
 
 //action : limite la portée de l'action markasread et unread à un spreadSheet : Attention si plusieurs fichiers sheet portent le meme nom !!!
 //let action=SpreadsheetApp.getActiveSpreadsheet().getName()
-</code></pre></details>
-
-<details><summary>lib/zz_archives.js</summary>
-<pre><code>
-/**
- * Écrit les données dans la feuille Google.
- *
- * @param {Object} spreadsheetBdD - La feuille Google Sheets sur laquelle écrire.
- * @param {Array} values - Les valeurs à écrire.
- * @param {Array} columnIndices - Les indices de colonnes où écrire les valeurs.
- * @param {Object} formulaire - Les informations de formulaire.
- * @param {Object} dataResponse - Les données de réponse.
- * @param {Object} sheetFormulaire - La feuille Google Sheets sur laquelle écrire.
- * @return {Array|null} - Les valeurs de la ligne écrite ou null en cas d'erreur.
- */
-function writeData(spreadsheetBdD, values, columnIndices, formulaire, dataResponse, sheetFormulaire) {
-  try {
-    // Préparation des données de base et des champs
-    const baseResponseData = values.slice(0, 9);
-    const tabFields = values.slice(9);
-
-    // Obtenir les valeurs de la ligne à écrire
-    const rowValues = getRowValues(spreadsheetBdD, values, columnIndices, baseResponseData, tabFields, formulaire, dataResponse);
-    if(rowValues === null) return null;
-
-    // Écriture des données dans la feuille de calcul
-    sheetFormulaire.appendRow(rowValues);
-
-    return rowValues;
-  } catch (e) {
-    handleException('writeData', e);
-    return null;
-  }
-}
 </code></pre></details>
 
 <details><summary>sheetInterface/appsscript.json</summary>
