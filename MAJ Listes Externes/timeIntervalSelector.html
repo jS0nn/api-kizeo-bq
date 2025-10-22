@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {font-family: Arial, sans-serif;margin: 16px 20px;color: #333;}
+    h3 {margin-bottom: 12px;color: #1a73e8;}
+    .form-group {margin-bottom: 16px;}
+    label {display: block;margin-bottom: 6px;}
+    select,
+    input[type="time"] {width: 100%;padding: 9px;font-size: 14px;border: 1px solid #ccc;border-radius: 4px;}
+    .inline-fields {display: grid;grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));gap: 12px;align-items: flex-end;}
+    .inline-fields .field {display: flex;flex-direction: column;}
+    .button-group {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .button {
+      padding: 8px 16px;
+      margin-left: 10px;
+      cursor: pointer;
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .button-cancel {
+      background-color: #5f6368;
+    }
+    .button[disabled] {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .info-text {
+      font-size: 13px;
+      color: #5f6368;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h3>Configuration de la mise à jour automatique</h3>
+  
+  <div class="form-group">
+    <label for="intervalType">Choisissez l'intervalle de mise à jour :</label>
+    <select id="intervalType">
+      <option value="none">Désactiver la mise à jour automatique</option>
+      <optgroup label="Minutes">
+        <option value="M1">Toutes les minutes</option>
+        <option value="M10">Toutes les 10 minutes</option>
+        <option value="M30">Toutes les 30 minutes</option>
+      </optgroup>
+      <optgroup label="Heures">
+        <option value="H1">Toutes les heures</option>
+        <option value="H3">Toutes les 3 heures</option>
+        <option value="H6">Toutes les 6 heures</option>
+        <option value="H24">Une fois par jour</option>
+      </optgroup>
+      <optgroup label="Jours">
+        <option value="WD1">Une fois par semaine</option>
+      </optgroup>
+    </select>
+    <p class="info-text">Note: La fréquence de mise à jour affecte le quota d'exécution de script disponible.</p>
+  </div>
+
+  <div class="form-group" id="dailyTimeContainer" style="display:none;">
+    <div class="inline-fields">
+      <div class="field">
+        <label for="dailyTime">Heure d'exécution quotidienne :</label>
+        <input type="time" id="dailyTime" step="3600" value="02:00">
+      </div>
+    </div>
+    <p class="info-text">Horaire appliqué selon le fuseau défini pour le projet Apps Script.</p>
+  </div>
+
+  <div class="form-group" id="weeklyContainer" style="display:none;">
+    <div class="inline-fields">
+      <div class="field">
+        <label for="weeklyDay">Jour d'exécution hebdomadaire :</label>
+        <select id="weeklyDay">
+          <option value="MON">Lundi</option>
+          <option value="TUE">Mardi</option>
+          <option value="WED">Mercredi</option>
+          <option value="THU">Jeudi</option>
+          <option value="FRI">Vendredi</option>
+          <option value="SAT">Samedi</option>
+          <option value="SUN">Dimanche</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="weeklyTime">Heure d'exécution :</label>
+        <input type="time" id="weeklyTime" step="3600" value="02:00">
+      </div>
+    </div>
+    <p class="info-text">Sélectionnez le jour et l'heure pour l'exécution hebdomadaire.</p>
+  </div>
+  
+  <div class="button-group">
+    <button class="button button-cancel" onclick="google.script.host.close()">Annuler</button>
+    <button class="button" id="submitButton" onclick="submitChoice()">Valider</button>
+  </div>
+
+  <script>
+    (function initFrequencyDialog() {
+      var currentFrequency = '<?= selectedFrequency ?>';
+      if (currentFrequency === 'undefined' || currentFrequency === 'null') {
+        currentFrequency = '';
+      }
+      var select = document.getElementById('intervalType');
+      var dailyContainer = document.getElementById('dailyTimeContainer');
+      var dailyInput = document.getElementById('dailyTime');
+      var weeklyContainer = document.getElementById('weeklyContainer');
+      var weeklyDaySelect = document.getElementById('weeklyDay');
+      var weeklyTimeInput = document.getElementById('weeklyTime');
+      if (!select) return;
+
+      function setSelectFromFrequency(freq) {
+        if (!freq) return;
+        var upper = freq.toUpperCase();
+        var customMatch = /^H24@([01]\d|2[0-3])$/.exec(upper);
+        if (customMatch) {
+          select.value = 'H24';
+          if (dailyInput) {
+            dailyInput.value = customMatch[1] + ':00';
+          }
+          return;
+        }
+        var weeklyMatch = /^WD1@([A-Z]{3})@([01]\d|2[0-3])$/.exec(upper);
+        if (weeklyMatch) {
+          select.value = 'WD1';
+          if (weeklyDaySelect) {
+            weeklyDaySelect.value = weeklyMatch[1];
+          }
+          if (weeklyTimeInput) {
+            weeklyTimeInput.value = weeklyMatch[2] + ':00';
+          }
+          return;
+        }
+        var option = Array.from(select.options).find(function (opt) {
+          return opt.value && opt.value.toUpperCase() === upper;
+        });
+        if (option) {
+          select.value = option.value;
+        }
+      }
+
+      function ensureDefaultValues() {
+        if (dailyInput && !dailyInput.value) {
+          dailyInput.value = '02:00';
+        }
+        if (weeklyTimeInput && !weeklyTimeInput.value) {
+          weeklyTimeInput.value = '02:00';
+        }
+        if (weeklyDaySelect && !weeklyDaySelect.value) {
+          weeklyDaySelect.value = 'MON';
+        }
+      }
+
+      function toggleContainers() {
+        if (dailyContainer) {
+          dailyContainer.style.display = select.value === 'H24' ? 'block' : 'none';
+        }
+        if (weeklyContainer) {
+          weeklyContainer.style.display = select.value === 'WD1' ? 'block' : 'none';
+        }
+        ensureDefaultValues();
+      }
+
+      setSelectFromFrequency(currentFrequency);
+      toggleContainers();
+      select.addEventListener('change', toggleContainers);
+    })();
+
+    function submitChoice() {
+      const intervalType = document.getElementById('intervalType').value;
+      const dailyTimeInput = document.getElementById('dailyTime');
+      const weeklyDaySelect = document.getElementById('weeklyDay');
+      const weeklyTimeInput = document.getElementById('weeklyTime');
+      const submitButton = document.getElementById('submitButton');
+      let finalChoice = intervalType;
+      if (intervalType === 'H24' && dailyTimeInput && dailyTimeInput.value) {
+        const timeParts = dailyTimeInput.value.split(':');
+        const hourPart = parseInt(timeParts[0], 10);
+        if (Number.isFinite(hourPart) && hourPart >= 0 && hourPart <= 23) {
+          const formattedHour = hourPart.toString().padStart(2, '0');
+          finalChoice = `H24@${formattedHour}`;
+        }
+      } else if (intervalType === 'WD1' && weeklyDaySelect && weeklyTimeInput) {
+        const dayValue = (weeklyDaySelect.value || '').toUpperCase();
+        const timePartsWeek = weeklyTimeInput.value ? weeklyTimeInput.value.split(':') : [];
+        const hourWeek = parseInt(timePartsWeek[0], 10);
+        if (['MON','TUE','WED','THU','FRI','SAT','SUN'].indexOf(dayValue) !== -1 &&
+          Number.isFinite(hourWeek) && hourWeek >= 0 && hourWeek <= 23) {
+          const formattedHourWeek = hourWeek.toString().padStart(2, '0');
+          finalChoice = `WD1@${dayValue}@${formattedHourWeek}`;
+        }
+      }
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Envoi...';
+      }
+      google.script.run
+        .withSuccessHandler(closeDialog)
+        .withFailureHandler(function () {
+          if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Valider';
+          }
+          alert("La configuration du déclencheur a échoué. Merci de réessayer.");
+        })
+        .processIntervalChoice(finalChoice);
+    }
+    
+    function closeDialog() {
+      google.script.host.close();
+    }
+  </script>
+</body>
+</html>

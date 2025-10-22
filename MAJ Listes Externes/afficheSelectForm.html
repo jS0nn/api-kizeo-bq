@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.0/jquery.min.js"></script>
+    <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.13.2/themes/smoothness/jquery-ui.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.13.2/jquery-ui.min.js"></script>
+    
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+    <title>KIZEOFORM</title>
+  </head>
+  <body>
+
+    <div class="container mt-3">
+
+      <h1 class="mt-3 shadow p-3 mb-5 bg-white rounded text-center text-primary">Selectionner un formulaire : </h1>
+     <div class="d-none" id="divForm">
+        <label for="selectForm" class="form-label">Formulaires :</label>
+        <div class="form-text">Choisir le formulaire à traiter</div>
+        <div class="input-group">
+            <div class="input-field">
+                <select type="text" class="select2Class" id="selectForm" name="selectForm" required>  
+                </select>
+            </div>
+        </div>
+       <br>
+        <form id="formulaireVariables"> 
+          <div id="divCheckboxes"></div>
+          <div class="mb-3">
+            <label for="bqTableName" class="form-label">Nom de table BigQuery</label>
+            <input type="text" class="form-control" id="bqTableName" name="bqTableName" maxlength="128" placeholder="exemple : inspection_chantier">
+            <div class="form-text">La saisie du nom est optionnelle : laisser vide pour que l'identifiant et le nom du formulaire soient utilisés automatiquement. Renseignez-le uniquement si vous souhaitez personnaliser la partie alias.</div>
+          </div>
+          <div class="d-flex justify-content-center mb-4">
+            <button type="submit" id="boutonEnvoiFormulaireVariables">Ajouter à la configuration</button>                
+          </div>  
+        </form>  
+      </div>
+      
+
+      <div class="d-flex justify-content-center mt-5">
+        <div class="d-none" role="status" id="chargement">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+      </div>
+    </div>
+    
+
+    <!-- Optional JavaScript-->
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js" integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW" crossorigin="anonymous"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function(event) { 
+        //équivalent du document ready jquery
+        document.getElementById("chargement").className = "spinner-border text-primary";
+        
+        google.script.run.withSuccessHandler(creeListeForm).chargelisteFormulaires();
+      });
+
+
+      const selectForm = document.getElementById('selectForm');
+      const tableNameInput = document.getElementById('bqTableName');
+      const MAX_TABLE_NAME_LENGTH = 128;
+      const BQ_TABLE_PART_SEPARATOR = '__';
+
+      selectForm.addEventListener('change', function() {
+        const index = selectForm.selectedIndex;
+        document.getElementById("boutonEnvoiFormulaireVariables").className = "btn btn-primary btn-lg";
+        if (index > 0) {
+          const formName = selectForm.options[index].text;
+          const formId = selectForm.options[index].value;
+          const defaultTableName = buildDefaultTableName(formId, formName);
+          tableNameInput.value = defaultTableName;
+          tableNameInput.dataset.defaultTableName = defaultTableName;
+        } else {
+          tableNameInput.value = '';
+          delete tableNameInput.dataset.defaultTableName;
+        }
+        tableNameInput.classList.remove('is-invalid');
+      });
+
+      tableNameInput.addEventListener('input', function() {
+        tableNameInput.classList.remove('is-invalid');
+      });
+
+      function creeListeForm(listeForm) {
+        var sel = document.getElementById("selectForm");
+        var opt = document.createElement("option");
+        opt.value = "";
+        opt.text = "Formulaires";
+        sel.add(opt, null);  //ajoute l'option à la fin du select
+
+        for(let i=0; i<listeForm.length; i++){
+          var opt = document.createElement("option");
+          opt.value = listeForm[i].id;
+          opt.text = listeForm[i].name;
+          sel.add(opt, null);  //ajoute l'option à la fin du select
+        }
+        
+        document.getElementById("selectForm").options[0].disabled = true;
+        document.getElementById("chargement").className = "d-none";
+        document.getElementById("divForm").className = "d-block shadow-sm p-3 mb-5 bg-white";
+        $('.select2Class').select2();
+      }
+
+      // Gestion du formulaire avec preventDefault pour éviter les soumissions multiples
+      document.getElementById("formulaireVariables").addEventListener("submit", function(event) {
+        event.preventDefault(); // Empêche la soumission standard du formulaire
+        handleFormSubmitVar();
+      });
+
+      //Envoie les données dans le GS pour stockage en Sheet
+      function handleFormSubmitVar() {
+        const formulaire = selectForm.options[selectForm.selectedIndex].text;
+        const formulaireID = selectForm.options[selectForm.selectedIndex].value;
+
+        const defaultTableName = buildDefaultTableName(formulaireID, formulaire);
+        const finalTableName = normalizeTableName(formulaireID, formulaire, tableNameInput.value || defaultTableName);
+
+        const hasTooLongName = finalTableName.length > MAX_TABLE_NAME_LENGTH;
+        if (!finalTableName || hasTooLongName) {
+          tableNameInput.classList.add('is-invalid');
+          tableNameInput.focus();
+          if (hasTooLongName) {
+            alert(`Le nom de table BigQuery doit contenir ${MAX_TABLE_NAME_LENGTH} caractères maximum.`);
+          }
+          return;
+        }
+
+        tableNameInput.value = finalTableName;
+        tableNameInput.classList.remove('is-invalid');
+
+        // Désactiver le bouton pour éviter les clics multiples
+        document.getElementById("boutonEnvoiFormulaireVariables").disabled = true;
+
+        const aliasPart = extractAliasPart(formulaireID, finalTableName);
+        var formulaireObj = {id: formulaireID, nom: formulaire, tableName: finalTableName, alias: aliasPart};
+        google.script.run
+          .withSuccessHandler(function() {
+            google.script.run
+              .withSuccessHandler(function() {
+                google.script.host.close();
+              })
+              .withFailureHandler(function(error) {
+                console.error("Erreur lors de l'ouverture du sélecteur de fréquence:", error);
+                window.alert("Impossible d'ouvrir la configuration de la mise à jour automatique. Vous pouvez la lancer depuis le menu 'Configuration Kizeo'.");
+                google.script.host.close();
+              })
+              .openTriggerFrequencyDialog();
+          })
+          .withFailureHandler(function(error) {
+            console.error("Erreur:", error);
+            document.getElementById("boutonEnvoiFormulaireVariables").disabled = false;
+          })
+          .enregistrementUI(formulaireObj);
+      }
+      function slugifyIdentifier(value) {
+        if (!value) return '';
+        return value
+          .toString()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-zA-Z0-9_]/g, '_')
+          .replace(/^_+/, '')
+          .replace(/_+$/g, '')
+          .toLowerCase();
+      }
+
+      function sanitizeTablePart(source, fallback) {
+        if (source === null || source === undefined) return fallback;
+        const trimmed = String(source).trim();
+        if (!trimmed) return fallback;
+        const slug = slugifyIdentifier(trimmed);
+        if (!slug) return fallback;
+        if (slug === 'field' && trimmed.toLowerCase() !== 'field') {
+          return fallback;
+        }
+        return slug;
+      }
+
+      function joinTableParts(parts) {
+        return parts.filter((part) => part && part.length).join(BQ_TABLE_PART_SEPARATOR);
+      }
+
+      function buildDefaultTableName(formId, formName) {
+        const idPart = sanitizeTablePart(formId, 'form');
+        const namePart = sanitizeTablePart(formName, 'sheet');
+        return joinTableParts([idPart, namePart]);
+      }
+
+      function normalizeTableName(formId, formName, rawValue) {
+        const idPart = sanitizeTablePart(formId, 'form');
+        const fallbackNamePart = sanitizeTablePart(formName, 'sheet');
+        const trimmed = rawValue ? String(rawValue).trim() : '';
+        if (!trimmed) {
+          return joinTableParts([idPart, fallbackNamePart]);
+        }
+
+        const normalizedInput = slugifyIdentifier(trimmed);
+        if (!normalizedInput) {
+          return joinTableParts([idPart, fallbackNamePart]);
+        }
+
+        let aliasCandidate = normalizedInput;
+        if (normalizedInput.includes(BQ_TABLE_PART_SEPARATOR)) {
+          const segments = normalizedInput.split(BQ_TABLE_PART_SEPARATOR).filter(Boolean);
+          if (!segments.length) {
+            aliasCandidate = fallbackNamePart;
+          } else if (segments[0] === idPart && segments.length > 1) {
+            aliasCandidate = segments.slice(1).join(BQ_TABLE_PART_SEPARATOR);
+          } else {
+            aliasCandidate = segments[segments.length - 1];
+          }
+        }
+
+        const aliasPart = sanitizeTablePart(aliasCandidate, fallbackNamePart);
+        return joinTableParts([idPart, aliasPart]);
+      }
+
+      function extractAliasPart(formId, tableName) {
+        if (!tableName) return '';
+        const idPart = sanitizeTablePart(formId, 'form');
+        const segments = tableName.split(BQ_TABLE_PART_SEPARATOR);
+        if (segments.length <= 1) {
+          return tableName;
+        }
+        if (segments[0] === idPart) {
+          return segments.slice(1).join(BQ_TABLE_PART_SEPARATOR);
+        }
+        return segments[segments.length - 1];
+      }
+    </script>
+  </body>
+</html>

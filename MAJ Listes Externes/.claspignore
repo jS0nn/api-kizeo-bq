@@ -1,0 +1,34 @@
+# Dépendances locales
+node_modules/**
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+package*.json
+
+# Outils et configurations de build
+rollup.config.js
+webpack.config.js
+vite.config.js
+tsconfig.json
+.eslintrc*
+.prettier*
+
+# Artefacts temporaires
+coverage/**
+dist/**
+build/**
+logs/**
+*.log
+
+# Fichiers et répertoires d'éditeur/OS
+.vscode/**
+.idea/**
+.git/**
+.github/**
+.DS_Store
+Thumbs.db
+
+# Documentation interne
+README.md
+docs/**
+notes/**

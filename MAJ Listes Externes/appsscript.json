@@ -1,0 +1,27 @@
+{
+  "timeZone": "Europe/Paris",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Drive",
+        "serviceId": "drive",
+        "version": "v2"
+      },
+      {
+        "userSymbol": "BigQuery",
+        "serviceId": "bigquery",
+        "version": "v2"
+      }
+    ],
+    "libraries": [
+      {
+        "userSymbol": "libKizeo",
+        "libraryId": "1791M56ST-weDt0Bk1e60Z_5NMNcXuh2g6e5JjGRn6ojFQK06nsO96aAj",
+        "version": "0",
+        "developmentMode": true
+      }
+    ]
+  }
+}
