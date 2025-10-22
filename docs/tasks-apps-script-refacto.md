@@ -10,11 +10,11 @@
 - [x] Documenter la procédure manuelle `setScriptProperties('termine')` dans `README.md` (section dépannage) pour éviter les confusions.
 
 ## 2. Pipeline d’ingestion & découplage *(P1)*
-- [ ] Éclater `lib/0_Data.handleResponses` en sous-fonctions testables (fetch des data, préparation des lignes, synchronisation médias, marquage lus).
-- [ ] Éviter la double requête `data/unread` : partager la réponse entre `main()` (sheetInterface) et `processData`.
-- [ ] Injecter les dépendances (`SpreadsheetApp`, `BigQuery`, `DriveApp`) via paramètres ou wrappers pour faciliter les mocks.
-- [ ] Clarifier les responsabilités : écrire dans Sheets vs. pousser vers BigQuery, afin de pouvoir désactiver l’un sans impacter l’autre.
-- [ ] Ajouter un interrupteur de configuration (`ingest_bigquery`) pour piloter l’ingestion BigQuery sans modifier le code.
+- [x] Éclater `lib/0_Data.handleResponses` en sous-fonctions testables (fetch des data, préparation des lignes, synchronisation médias, marquage lus).
+- [x] Éviter la double requête `data/unread` : partager la réponse entre `main()` (sheetInterface) et `processData`.
+- [x] Injecter les dépendances (`SpreadsheetApp`, `BigQuery`, `DriveApp`) via paramètres ou wrappers pour faciliter les mocks.
+- [x] Clarifier les responsabilités : écrire dans Sheets vs. pousser vers BigQuery, afin de pouvoir désactiver l’un sans impacter l’autre.
+- [x] Ajouter un interrupteur de configuration (`ingest_bigquery`) pour piloter l’ingestion BigQuery sans modifier le code.
 
 ## 3. Configuration et secrets *(P1)*
 - [ ] Déplacer la lecture du token Kizeo vers `ScriptProperties` + cache local, supprimer le `openById` hardcodé (`lib/APIHandler`).
