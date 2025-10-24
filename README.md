@@ -55,6 +55,14 @@
 - `ensureDeduplicationTrigger` crée un déclencheur horaire dédié (`runBigQueryDeduplication`) et cohabite avec le déclencheur principal `main`.
 - Menu “Forcer la déduplication BigQuery” permet un lancement manuel avec feedback détaillé.
 
+## Backfill BigQuery
+- `bqBackfillForm(formId, options)` exécute un backfill direct depuis Kizeo vers BigQuery sans passer par les feuilles :
+  - Lecture complète `data/all`, filtrage optionnel par `startDate`, `endDate`, `limit`.
+  - Ingestion `raw` + tables parent & sous-formulaires via les mêmes helpers que le run quotidien.
+  - Option `chunkSize` (par défaut 25) pour piloter la taille des lots ; `includeMedia: true` possible si un classeur cible est fourni (`spreadsheetId`) pour réutiliser la logique Drive.
+- Exemple : `clasp run bqBackfillForm --params '["1018296", {"startDate":"2024-01-01","endDate":"2024-01-31","chunkSize":50}]'`
+- Les scénarios manuels sont documentés dans `lib/zz_Tests.js` (`zzDescribeScenarioBackfillMinimal`).
+
 ## Tests manuels
 - Aucun runner automatique : utiliser `zz_Tests.js` ou `sheetInterface/ZZ_tests.js` pour ajouter des scénarios `zzDescribeScenario()`.
 - Exécution distante via `clasp run zzDescribeScenario` après mise à jour (`clasp push`).

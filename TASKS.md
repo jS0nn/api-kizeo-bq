@@ -3,14 +3,14 @@
 ## Phase actuelle
 - [x] Ajouter un squelette d'ingestion BigQuery (table brute + audit)
 - [x] Définir les ScriptProperties `BQ_PROJECT_ID`, `BQ_DATASET`, `BQ_LOCATION` *(conservé la valeur par défaut `fr-tpd-sarpi-datagrs-dev.Kizeo`, unique cible autorisée)*
-- [ ] Vérifier la création automatique des tables `kizeo_raw_events` et `etl_audit` *(prévu: lancer `clasp run bqIngestParentBatch` et inspecter dataset)*
+- [x] Vérifier la création automatique des tables `kizeo_raw_events` et `etl_audit` *(confirmé, `clasp run bqIngestParentBatch` crée bien les tables)*
 - [x] Cartographier les champs Kizeo → schéma BigQuery typé (parents)
 - [x] Implémenter l'écriture des tables parent (colonnes dynamiques)
 - [x] Implémenter l'écriture BigQuery des médias Drive *(fait: `bqIngestMediaBatch` crée une table par formulaire via `formId__alias__media` et enregistre `drive_file_id`, champs parent, URL Drive)*
-- [ ] Optimiser la déduplication Drive des médias sans multiplier les appels `DriveApp` *(conserver l’idée mais réduire les `getFilesByName` en rafale)*
-- [ ] Gérer les évolutions de schéma (ALTER ADD COLUMN)
+- [x] Optimiser la déduplication Drive des médias sans multiplier les appels `DriveApp` *(cache Drive côté Apps Script pour éviter les `getFilesByName` répétés)*
+- [x] Gérer les évolutions de schéma (ALTER ADD COLUMN)
 - [x] Renforcer `bqRecordAudit` (statuts d'échec, volumétrie, durée, référence run)
-- [ ] Préparer le backfill historique et validation BI *(à définir sans passer par Sheets API; envisager script dédié utilisant `bqIngestRawKizeoBatch`)*
+- [x] Préparer le backfill historique et validation BI *(disponible via `bqBackfillForm`, export direct BigQuery sans passer par Sheets)*
 - [ ] Valider la spécification migration Cloud Run (voir docs/cloudrun-migration.md)
 
 ## Notes rapides

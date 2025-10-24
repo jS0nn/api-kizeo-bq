@@ -17,7 +17,7 @@
 - [x] Ajouter un interrupteur de configuration (`ingest_bigquery`) pour piloter l’ingestion BigQuery sans modifier le code.
 
 ## 3. Configuration et secrets *(P1)*
-- [ ] Déplacer la lecture du token Kizeo vers `ScriptProperties` + cache local, supprimer le `openById` hardcodé (`lib/APIHandler`).
+- [ ] Déplacer la lecture du token Kizeo vers `ScriptProperties` + cache local, supprimer le `openById` hardcodé (`lib/APIHandler`) *(reporté, décision de conserver la logique actuelle pour l'instant)*.
 - [ ] Valider la présence des propriétés BigQuery en amont (UI + librairie) avec des messages d’erreur explicites.
 - [ ] Documenter la procédure de mise à jour des secrets (README + `context-kizeo.md`).
 
