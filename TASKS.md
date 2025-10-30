@@ -17,12 +17,12 @@
 - [x] `lib/APIHandler.js`: externaliser la récupération du token Kizeo dans `PropertiesService`, ne relire le classeur que si l'appel API échoue, puis repropager la valeur (éviter toute boucle infinie).
 - [x] `lib/APIHandler.js`: harmoniser le retour d'erreur pour ne plus renvoyer `{data: undefined, responseCode: undefined}` après exception.
 - [x] `lib/GestionErreurs.gs.js`: sécuriser l'accès à `SpreadsheetApp.getActiveSpreadsheet()` et limiter les envois d'e-mails (fallback si classeur absent).
-- [ ] `lib/0_Data.js`, `lib/Tableaux.js`: analyser les dépendances des fonctions `@deprecated`, définir un plan de débranchement ou d'isolation et refléter l'état dans la documentation. *(Instrumentation des usages legacy ajoutée, reste à dresser le plan de retrait.)*
-- [ ] `lib/Images.js`: conserver l'écriture Drive des médias (métadonnées seulement en BigQuery) et documenter la responsabilité. *(Comportement actuel vérifié, compléter la doc.)*
+- [x] `lib/0_Data.js`, `lib/Tableaux.js`: analyser les dépendances des fonctions `@deprecated`, définir un plan de débranchement ou d'isolation et refléter l'état dans la documentation. *(Voir `docs/legacy-deprecation-plan.md` + helper `logLegacyUsageStats()`.)*
+- [x] `lib/Images.js`: conserver l'écriture Drive des médias (métadonnées seulement en BigQuery) et documenter la responsabilité. *(Section Drive dédiée dans `docs/legacy-deprecation-plan.md`.)*
 - [x] ETL: persister un mapping `{slug,label,type}` (ex. dans `etl_audit` ou table dédiée) pour historiser la nomenclature dynamique.
 - [x] Logs/erreurs: adopter un préfixe cohérent (`lib:module:fct`), centraliser le throttling des mails et enrichir l'audit d'échecs.
 - [x] `handleResponses`: scinder les responsabilités (ingestion BigQuery, mise à jour Sheets, listes externes) et clarifier les retours d'état.
-- [ ] Architecture: découper les rôles principaux en modules dédiés (API, ingestion, persistance Sheets/Drive, orchestration). *(Refactor initial appliqué côté `handleResponses`; poursuivre sur le reste de la librairie.)*
+- [ ] Architecture: découper les rôles principaux en modules dédiés (API, ingestion, persistance Sheets/Drive, orchestration). *(Voir `docs/module-refactor-roadmap.md` pour la cible, reste à implémenter.)*
 - [x] Legacy: introduire un flag de feature pour le code historique (Sheets/Drive), vérifier les usages actuels et décider de sa désactivation par défaut.
 
 ## Notes rapides
