@@ -33,7 +33,7 @@ Instrumentation ajoutée :
    - Retour `>0` => investiguer les usages résiduels (vérifier les `DocumentProperties` ou les logs).
 
 ### Étape 2 — Isolation
-1. Déplacer les fonctions encore utiles (`prepareDataForSheet`, `getDataFromFields`, etc.) dans un module dédié (`lib/legacy/SheetSnapshot.js` par exemple).
+1. Déplacer les fonctions encore utiles (`prepareDataForSheet`, `getDataFromFields`, etc.) dans un module dédié (`lib/SheetSnapshot.js`). *(fait)*
 2. Extraire `buildRowSnapshot` pour qu’il dépende uniquement de ce module, en supprimant les références directes à `saveDataToSheet`.
 3. Marquer le module d’un flag `ENABLE_LEGACY_SNAPSHOT` si besoin (permet de désactiver entièrement le traitement Sheets/Drive dans certains environnements).
 

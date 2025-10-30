@@ -12,7 +12,7 @@
 |--------|--------------------|----------------------------|
 | `api` | `lib/KizeoClient.js`, `lib/APIHandler.js` (wrapper) | Communication Kizeo (HTTP, token, retries) |
 | `ingest` | `lib/BigQuery.js`, `lib/0_Data.ingest*` | Préparation et écriture BigQuery (raw, parent, sous-formes, médias, audit) |
-| `legacy` | `lib/legacy/SheetSnapshot.js`, `lib/Tableaux.js` (isolé) | Fonctions Sheets/Drive héritées (activation conditionnelle) |
+| `legacy` | `lib/SheetSnapshot.js`, `lib/Tableaux.js` (isolé) | Fonctions Sheets/Drive héritées (activation conditionnelle) |
 | `media` | `lib/Images.js` | Gestion Drive des médias (downloading, stockage) |
 | `orchestration` | `lib/ProcessManager.js` (nouveau) | `processData`, `handleResponses`, triggers, gestion des erreurs |
 | `sync` | `lib/ListesExternes.js` | Mise à jour listes externes / autres systèmes |
@@ -29,10 +29,9 @@
    - Injecter le service dans `processData` via `createIngestionServices()`.
    - Simplifier les tests en mockant uniquement ce service.
 
-3. **Extraire `legacy/SheetSnapshot`**
-   - Déplacer `prepareDataForSheet`, `buildRowSnapshot`, `persistLegacySnapshotToSheet`, `logLegacyUsageStats`.
-   - Remplacer les appels directs par une interface `SnapshotService`.
-   - Garder le flag `ENABLE_LEGACY_SHEETS_SYNC` au même endroit.
+3. **Isoler `SheetSnapshot`** *(partiellement fait)*
+   - `lib/SheetSnapshot.js` expose `prepareDataForSheet`, `buildRowSnapshot`, `persistSnapshot`, etc., et les fonctions globales sont désormais des wrappers.
+   - Étapes restantes : retirer progressivement `lib/Tableaux.js`, déplacer la collecte médias Drive (si souhaité) et réduire les dépendances vers le code legacy.
 
 4. **Séparer `processData`**
    - `fetchUnreadResponses(formulaire, action, services)` → module API.
@@ -41,7 +40,7 @@
    - Fournir un adaptateur explicite pour le projet externe « MAJ Listes Externes » afin qu’il consomme l’API sans dépendre du code legacy désactivé.
 
 5. **Adapter les tests**
-   - Créer des tests ciblés par module (ex. `api/KizeoClientTests.gs`, `legacy/SheetSnapshotTests.gs`).
+   - Créer des tests ciblés par module (ex. `api/KizeoClientTests.gs`, `SheetSnapshotTests.gs`).
    - Garder `runAllTests` comme agrégateur mais réduire le mocking à chaque cas.
 
 ## 4. Bénéfices attendus
