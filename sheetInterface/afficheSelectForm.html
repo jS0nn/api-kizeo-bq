@@ -158,6 +158,15 @@
           })
           .withFailureHandler(function(error) {
             console.error("Erreur:", error);
+            const message = (error && error.message) || '';
+            if (
+              message.indexOf('EXECUTION_EN_COURS') !== -1 ||
+              message.toLowerCase().indexOf('mise à jour est déjà en cours') !== -1
+            ) {
+              window.alert("Une mise à jour est déjà en cours. Patientez avant de relancer.");
+            } else {
+              window.alert("Impossible de finaliser l'enregistrement. Consultez les journaux pour plus de détails.");
+            }
             document.getElementById("boutonEnvoiFormulaireVariables").disabled = false;
           })
           .enregistrementUI(formulaireObj);

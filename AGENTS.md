@@ -187,4 +187,9 @@ args    = ["-y", "@upstash/context7-mcp"]  # add --api-key if you have one
 - **Apps Script** essentials: using `clasp` for local development and deployment, the advanced BigQuery service, `PropertiesService`, and `HtmlService` for dialogs/sidebars.
 
 
+---
+
+##Important : 
+- **Tu dois ajouter un numero de version du code en commentaire (pour sheetInterface au debut de Code.js, pour lib au debut de 0_Data.js), si aucune version n'est notée commence à 0.1.0 **
+
 tu dois toujours retourner tes informations en francais

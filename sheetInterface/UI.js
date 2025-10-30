@@ -138,6 +138,15 @@ function enregistrementUI(formulaire) {
     }
 
     const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
+    if (getEtatExecution() === 'enCours') {
+      console.log('enregistrementUI: exécution précédente détectée avant configuration.');
+      notifyExecutionAlreadyRunning({
+        shouldThrow: true,
+        errorMessage: 'EXECUTION_EN_COURS',
+        showToast: false,
+        showAlert: false
+      });
+    }
     setScriptProperties('enCours');
     try {
       const targetSheet = libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
@@ -177,12 +186,13 @@ function enregistrementUI(formulaire) {
           tableName
         });
       }
-      main();
+      main({ origin: 'ui_dialog', skipLockCheck: true });
     } finally {
       setScriptProperties('termine');
     }
   } catch (e) {
     libKizeo.handleException('enregistrementUI', e, { formulaire: formulaire, user: user });
+    throw e;
   }
 }
 
@@ -191,7 +201,15 @@ function enregistrementUI(formulaire) {
  * 
  */
 function majSheet() {
-  main();
+  if (getEtatExecution() === 'enCours') {
+    console.log('majSheet: exécution précédente détectée.');
+    notifyExecutionAlreadyRunning({
+      toastMessage: "Une mise à jour est déjà en cours. Relancez depuis le menu seulement lorsqu'elle sera terminée.",
+      alertMessage: "Une mise à jour est déjà en cours. Patientez avant de relancer depuis le menu."
+    });
+    return;
+  }
+  main({ origin: 'menu' });
 }
 
 /**

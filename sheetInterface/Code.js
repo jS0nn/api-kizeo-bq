@@ -1,4 +1,4 @@
-//Version 4.0
+//Version 4.2.0
 
 /**    DOC :
   https://www.kizeoforms.com/doc/swagger/v3/#/
@@ -118,6 +118,7 @@ const CONFIG_HEADERS = [
   'last_run_duration_s',
   'trigger_frequency'
 ];
+const CONFIG_DISPLAY_HEADER = ['Paramètre', 'Valeur'];
 const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'action'];
 const MAX_BQ_TABLE_NAME_LENGTH = 128;
 
@@ -466,6 +467,7 @@ function writeFormConfigToSheet(sheet, config) {
   }
 
   const entries = new Map();
+  const rowIndexMap = {};
   if (config && typeof config === 'object') {
     Object.keys(config).forEach((key) => {
       const trimmedKey = String(key || '').trim();
@@ -479,15 +481,141 @@ function writeFormConfigToSheet(sheet, config) {
   const rows = [];
   CONFIG_HEADERS.forEach((header) => {
     const value = entries.has(header) ? entries.get(header) : '';
+    rowIndexMap[header] = rows.length;
     rows.push([header, value]);
     entries.delete(header);
   });
   entries.forEach((value, key) => {
+    rowIndexMap[key] = rows.length;
     rows.push([key, value]);
   });
 
   if (rows.length) {
     sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+  }
+
+  applyConfigSheetLayout(sheet, rows.length, rowIndexMap);
+}
+
+/**
+ * Améliore la lisibilité de l'onglet de configuration en appliquant un format cohérent
+ * et des aides à la saisie (bandes alternées, gel de la ligne d'entête, validations).
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet - Feuille de configuration active.
+ * @param {number} rowCount - Nombre de lignes de données écrites (hors entête).
+ * @param {Object} rowIndexMap - Association clé -> index (0-based) dans les lignes écrites.
+ */
+function applyConfigSheetLayout(sheet, rowCount, rowIndexMap) {
+  if (!sheet) return;
+
+  const expectedHeader = CONFIG_DISPLAY_HEADER;
+  const headerRange = sheet.getRange(1, 1, 1, 2);
+  const headerValues = headerRange.getValues();
+  if (
+    !headerValues ||
+    headerValues.length === 0 ||
+    headerValues[0][0] !== expectedHeader[0] ||
+    headerValues[0][1] !== expectedHeader[1]
+  ) {
+    headerRange.setValues([expectedHeader]);
+  }
+
+  sheet.setFrozenRows(1);
+  sheet.setFrozenColumns(1);
+  sheet.setColumnWidth(1, 220);
+  sheet.setColumnWidth(2, 360);
+
+  const totalRows = Math.max(rowCount + 1, 2);
+  const tableRange = sheet.getRange(1, 1, totalRows, 2);
+
+  sheet.getBandings().forEach((banding) => {
+    if (banding.getRange().getSheet().getSheetId() === sheet.getSheetId()) {
+      banding.remove();
+    }
+  });
+
+  const banding = tableRange.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY);
+  banding.setHeaderRowColor('#1a73e8');
+  banding.setFirstRowColor('#ffffff');
+  banding.setSecondRowColor('#f5f5f5');
+
+  headerRange
+    .setFontWeight('bold')
+    .setFontColor('#ffffff')
+    .setHorizontalAlignment('left')
+    .setVerticalAlignment('middle')
+    .setWrap(false);
+
+  if (rowCount > 0) {
+    const keysRange = sheet.getRange(2, 1, rowCount, 1);
+    keysRange.setFontWeight('bold').setFontColor('#174ea6').setWrap(false);
+
+    const valuesRange = sheet.getRange(2, 2, rowCount, 1);
+    valuesRange.setWrap(true).setHorizontalAlignment('left').setVerticalAlignment('middle');
+  }
+
+  tableRange.setBorder(true, true, true, true, true, true, '#dadce0', SpreadsheetApp.BorderStyle.SOLID);
+
+  const existingFilter = sheet.getFilter();
+  if (existingFilter && existingFilter.getRange().getSheet().getSheetId() === sheet.getSheetId()) {
+    existingFilter.remove();
+  }
+  if (rowCount > 0) {
+    tableRange.createFilter();
+  }
+
+  applyConfigSheetValidations(sheet, rowIndexMap || {});
+}
+
+/**
+ * Ajoute des validations et aides contextuelles sur les cellules clés de la configuration.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet - Feuille de configuration active.
+ * @param {Object} rowIndexMap - Association clé -> index (0-based) dans les lignes écrites.
+ */
+function applyConfigSheetValidations(sheet, rowIndexMap) {
+  if (!sheet) return;
+  if (!rowIndexMap || typeof rowIndexMap !== 'object') return;
+
+  if (Object.prototype.hasOwnProperty.call(rowIndexMap, CONFIG_BATCH_LIMIT_KEY)) {
+    const rowNumber = rowIndexMap[CONFIG_BATCH_LIMIT_KEY] + 2;
+    const range = sheet.getRange(rowNumber, 2);
+    const validation = SpreadsheetApp.newDataValidation()
+      .requireNumberBetween(1, 5000)
+      .setAllowInvalid(false)
+      .setHelpText('Saisir un entier positif (1 à 5000) pour limiter le volume ingéré par lot Kizeo.')
+      .build();
+    range.setDataValidation(validation);
+    range.setNumberFormat('0');
+  }
+
+  if (Object.prototype.hasOwnProperty.call(rowIndexMap, CONFIG_INGEST_BIGQUERY_KEY)) {
+    const rowNumber = rowIndexMap[CONFIG_INGEST_BIGQUERY_KEY] + 2;
+    const range = sheet.getRange(rowNumber, 2);
+    const validation = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['true', 'false'], true)
+      .setAllowInvalid(false)
+      .setHelpText("true = ingestion BigQuery active. false = suspension temporaire de l'écriture.")
+      .build();
+    range.setDataValidation(validation);
+    range.setHorizontalAlignment('center');
+  }
+
+  if (Object.prototype.hasOwnProperty.call(rowIndexMap, 'trigger_frequency')) {
+    const rowNumber = rowIndexMap.trigger_frequency + 2;
+    const range = sheet.getRange(rowNumber, 2);
+    const listValues = ['none'].concat(Object.keys(TRIGGER_OPTIONS));
+    const validation = SpreadsheetApp.newDataValidation()
+      .requireValueInList(listValues, true)
+      .setAllowInvalid(true)
+      .setHelpText(
+        "Sélectionner une fréquence standard (M1, H1, H24…) ou saisir un code personnalisé (ex. H24@06 ou WD1@MON@08)."
+      )
+      .build();
+    range.setDataValidation(validation);
+    range.setNote(
+      'Utiliser le menu "Configuration Kizeo" pour régler le déclencheur ou saisir un code H24@HH / WD1@JOUR@HH.'
+    );
   }
 }
 
@@ -603,11 +731,50 @@ function notifyConfigErrors(validation) {
   console.log(`Configuration invalide détectée: ${message}`);
 }
 
+function notifyExecutionAlreadyRunning(options) {
+  const opts = options || {};
+  const toastMessage =
+    opts.toastMessage ||
+    "Une mise à jour est déjà en cours. Patientez avant de relancer ou exécutez setScriptProperties('termine').";
+  const alertMessage =
+    opts.alertMessage ||
+    "Une mise à jour est déjà en cours. Patientez avant de relancer.\nEn cas de blocage, réinitialisez l'état manuellement ou exécutez setScriptProperties('termine').";
+  const toastDuration = Number.isFinite(opts.toastSeconds) ? Math.max(1, Number(opts.toastSeconds)) : 10;
+  if (opts.showToast !== false) {
+    try {
+      const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+      if (spreadsheet) {
+        spreadsheet.toast(toastMessage, 'Mise à jour en cours', toastDuration);
+      }
+    } catch (toastError) {
+      console.log(`notifyExecutionAlreadyRunning: toast KO -> ${toastError}`);
+    }
+  }
+
+  if (opts.showAlert !== false) {
+    try {
+      const ui = SpreadsheetApp.getUi();
+      if (ui) {
+        ui.alert('Mise à jour en cours', alertMessage, ui.ButtonSet.OK);
+      }
+    } catch (uiError) {
+      console.log(`notifyExecutionAlreadyRunning: alerte UI indisponible -> ${uiError}`);
+    }
+  }
+
+  if (opts.shouldThrow) {
+    throw new Error(opts.errorMessage || 'EXECUTION_EN_COURS');
+  }
+}
+
 /**
  * Met à jour les données pour le formulaire configuré dans l'onglet unique du classeur.
  * Les réponses sont ingérées dans BigQuery et les exports Drive (PDF/médias) sont déclenchés si requis.
  */
-function main() {
+function main(options) {
+  const opts = options || {};
+  const origin = opts.origin || 'unknown';
+  const skipLockCheck = opts.skipLockCheck === true;
   const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
   const context = resolveFormulaireContext(spreadsheetBdD);
 
@@ -624,7 +791,22 @@ function main() {
 
   context.config = Object.assign({}, context.config, validation.config);
 
-  if (getEtatExecution() === 'enCours') {
+  if (!skipLockCheck && getEtatExecution() === 'enCours') {
+    const notifyOptions = {};
+    if (origin === 'menu') {
+      notifyOptions.toastMessage =
+        "Une mise à jour est déjà en cours. Relancez depuis le menu lorsqu'elle sera terminée.";
+      notifyOptions.alertMessage =
+        "Une mise à jour est déjà en cours. Patientez avant de relancer depuis le menu.";
+    } else if (origin === 'ui_dialog') {
+      notifyOptions.toastMessage =
+        "Une mise à jour est déjà en cours. Patientez avant de relancer depuis la fenêtre de sélection.";
+      notifyOptions.showAlert = false;
+      notifyOptions.showToast = false;
+      notifyOptions.shouldThrow = true;
+      notifyOptions.errorMessage = 'EXECUTION_EN_COURS';
+    }
+    notifyExecutionAlreadyRunning(notifyOptions);
     console.log('Exécution précédente toujours en cours.');
     console.log("En cas de blocage, réinitialisez l'état manuellement ou exécutez setScriptProperties('termine').");
     return;
