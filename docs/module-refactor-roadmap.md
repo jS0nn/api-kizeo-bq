@@ -25,7 +25,7 @@
 | `media` | `lib/Images.js` | Gestion Drive des médias (downloading, stockage) |
 | `orchestration` | `lib/ProcessManager.js` (nouveau) | `processData`, `handleResponses`, triggers, gestion des erreurs |
 | `sync` | `lib/ListesExternes.js` | Mise à jour listes externes / autres systèmes |
-| `external-lists` (script dédié) | `MAJ Listes Externes/*` | UI Google Sheets + exports Drive spécifiques aux listes externes (autonome, consomme `processData` et `buildRowSnapshot`). |
+| `external-lists` (script dédié) | `lib/ListesExternes.js` (expose `ExternalListsService`), `MAJ Listes Externes/*` | Synchronisation listes Kizeo (`updateFromSnapshot`), UI Google Sheets + exports Drive spécifiques (autonome, consomme `processData` et `buildRowSnapshot`). |
 
 ## 3. Étapes recommandées
 

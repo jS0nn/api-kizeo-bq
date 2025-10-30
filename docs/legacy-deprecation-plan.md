@@ -36,6 +36,7 @@ Instrumentation ajoutée :
 1. Déplacer les fonctions encore utiles (`prepareDataForSheet`, `getDataFromFields`, etc.) dans un module dédié (`lib/SheetSnapshot.js`). *(fait)*
 2. Extraire `buildRowSnapshot` pour qu’il dépende uniquement de ce module, en supprimant les références directes à `saveDataToSheet`.
 3. Marquer le module d’un flag `ENABLE_LEGACY_SNAPSHOT` si besoin (permet de désactiver entièrement le traitement Sheets/Drive dans certains environnements).
+ 4. Retirer les helpers Sheets obsolètes (`ensureFormActionCode`, `upsertFormConfig`) afin de réduire la surface legacy. *(fait)*
 
 ### Étape 3 — Suppression
 1. Supprimer `saveDataToSheet` et tout `lib/Tableaux.js` après validation des points ci-dessus.

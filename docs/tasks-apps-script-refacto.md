@@ -7,6 +7,7 @@
 - [x] Supprimer les fonctions orphelines (`lib/Outils.generateActionCode`, `formatNumberAllSheets`, `reduireJSON`, `reduireJSON2`, `lib/zz_archives.writeData`) ou les déplacer dans `zz_*` si besoin de debug.
 - [x] Retirer les modules obsolètes liés aux feuilles (`lib/GestionDonneesMaJ`, `lib/DataNonLues`) et mettre `context-kizeo.md` en cohérence.
 - [x] Auditer `lib/ListesExternes`, `lib/Images`, `lib/Tableaux` et le répertoire **MAJ Listes Externes/** pour isoler les helpers legacy / tests et documenter les dépendances restantes. *(Voir `docs/legacy-external-lists-audit.md`.)*
+- [ ] Planifier la suppression de `lib/Tableaux.js` et des wrappers legacy (`saveDataToSheet`, `prepareDataForSheet`, etc.) une fois la période de monitoring terminée.
 - [x] Documenter la procédure manuelle `setScriptProperties('termine')` dans `README.md` (section dépannage) pour éviter les confusions.
 
 ## 2. Pipeline d’ingestion & découplage *(P1)*
@@ -26,9 +27,11 @@
 - [x] Ajouter des retries/backoff sur les points sensibles (UrlFetch Kizeo, BigQuery streaming, Drive).
 - [ ] Tracer la consommation (temps, quota) dans les logs et envisager une feuille/BigQuery d’audit minimale.
 - [x] Harmoniser les retours d’état des exports PDF/Média (succès, partial, échec).
+- [ ] Factoriser un module `DriveMediaService` (encapsulation de `lib/Images.js`) avec dépendances injectables pour tests.
 
 ## 5. Tests & validation *(P2)*
 - [ ] Transformer les scénarios manuels en fonctions `zzDescribeScenario()` documentées (`lib/zz_Tests`, `sheetInterface/ZZ_tests`).
+- [ ] Ajouter un test automatisé couvrant `targets.sheet = false` + mise à jour de liste externe.
 - [ ] Couvrir au moins un test d’ingestion complet (form ID fictif) et un test d’export Drive.
 - [ ] Ajouter une checklist “run manuel” (clasp push/run, vérif tables BigQuery, inspection Drive) dans `TASKS.md`.
 - [ ] Préparer un plan de migration vers des tests automatisés (Apps Script + mocks UrlFetch/BigQuery) lorsque l’API le permettra.

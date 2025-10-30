@@ -8,7 +8,8 @@ Cartographier le code legacy encore nécessaire pour la synchronisation des list
 
 | Module | Fonctions clés | Responsabilités | Consommateurs identifiés | Notes |
 |--------|----------------|-----------------|--------------------------|-------|
-| `lib/ListesExternes.js` | `majListeExterne`, `replaceKizeoData` | Lecture/écriture des listes externes Kizeo (`/lists`). Conversion d’un snapshot (`existingHeaders`, `rowEnCours`) en payload PUT. | `ProcessManager.runExternalListsSync` (bibliothèque), projet **MAJ Listes Externes/** via `libKizeo` | Dépend de `requeteAPIDonnees` et `handleException`. Le harness `test_majListeExterne` a été déplacé dans `lib/zz_Tests.js`. |
+| `lib/ExternalListsService.js` | `updateFromSnapshot`, `replaceItems`, helpers internes | Service central pour mettre à jour les listes Kizeo à partir du snapshot Apps Script. | `ProcessManager.runExternalListsSync`, `MAJ Listes Externes/*`, tests (`lib/zz_Tests`) | Injection des dépendances (`fetch`, `handleException`, `log`). Retourne `Mise A Jour OK` / `IGNORED` / `null`. |
+| `lib/ListesExternes.js` | `majListeExterne` (wrapper historique) | Compatibilité globale : expose `majListeExterne` et `replaceKizeoData` en redirigeant vers `ExternalListsService`. | Scripts legacy qui importaient directement `majListeExterne`. | Permet une migration progressive sans casser l’API globale existante. |
 | `lib/Images.js` | `gestionChampImage`, `saveBlobToFolder`, `getOrCreateFolder`, `buildMediaFolderName`, `buildDriveMediaUrls`, `normalizeDrivePublicUrl`, `getCachedDriveFolder`, `lookupFileIdInFolder`, `rememberFileInCache`, `findExistingFileInFolder` | Téléchargement Drive des médias Kizeo, mise en cache des dossiers/fichiers, génération de formules `HYPERLINK` vers les médias ou dossiers. | `SheetSnapshot.buildRowSnapshot`, `lib/Tableaux` (legacy subforms), exports médias/PDF (`sheetInterface/Code.js`), harness **MAJ Listes Externes/ZZ_tests.js** (`saveBlobToFolder`) | Crée des dossiers `Medias <formId> <Nom>` à côté du classeur. Utilise caches en mémoire (réinitialiser en tests). |
 | `lib/Tableaux.js` | `gestionTableaux`, `getOrCreateSheet`, `getOrCreateHeaders`, `getNewHeaders`, `createNewRows`, `appendRowsToSheet`, `createHyperlinkToSheet` | Persistance historique des sous-formulaires dans des onglets Sheets (`Nom || ID || sousForm`) et génération de liens hypertexte. | `SheetSnapshot.prepareDataToRowFormat` (fallback legacy), `ProcessManager.collectResponseArtifacts` via `SheetSnapshot.persistSnapshot` | Chaque ligne appendée déclenche `gestionChampImage` pour les médias. Les onglets restent consultés par les équipes terrain ; aucune automatisation de purge n’est en place. |
 
@@ -36,6 +37,12 @@ Cartographier le code legacy encore nécessaire pour la synchronisation des list
 | `getOrCreateSheet`, `getOrCreateHeaders`, `getNewHeaders` | Préparent la feuille et les en-têtes. | `gestionTableaux` | `SpreadsheetApp` | Ajoutent automatiquement des colonnes lorsque de nouveaux champs sont détectés. |
 | `createNewRows`, `appendRowsToSheet`, `createHyperlinkToSheet` | Génèrent les valeurs, écrivent dans la feuille, retournent un lien. | `gestionTableaux` | `gestionChampImage`, `isNumeric`, `SpreadsheetApp` | `createNewRows` déclenche `gestionChampImage` pour les champs médias. |
 
+### 1.4 Nettoyage en cours
+
+- `ensureFormActionCode` et `upsertFormConfig` (anciens helpers Sheets) ont été retirés du code actif.
+- Les harness historiques (`test_majListeExterne`, etc.) ont été déplacés vers `lib/zz_Tests.js` afin de clarifier la surface de production.
+- Les prochaines purges viseront `lib/Tableaux.js` et la persistance Sheets dès que les équipes auront migré vers les rapports BigQuery/Looker.
+
 ## 2. Projet **MAJ Listes Externes/**
 
 - Récupère la bibliothèque `libKizeo` et invoque directement :
@@ -59,24 +66,20 @@ Cartographier le code legacy encore nécessaire pour la synchronisation des list
 2. **Listes externes** : `ProcessManager.runExternalListsSync` consomme ce snapshot pour mettre à jour Kizeo via `majListeExterne`. Les équipes peuvent ensuite exporter les listes depuis le projet **MAJ Listes Externes**.
 3. **Exports médias** : `gestionChampImage` continue d’alimenter les dossiers Drive `Medias <formId>` ; les exports PDF/médias (`sheetInterface/Code.js`, **MAJ Listes Externes**) réutilisent `saveBlobToFolder`.
 
-## 5. Actions proposées
+## 5. Audit BigQuery vs Sheets
 
-1. **Inventaire détaillé** : lister, dans un tableau, chaque helper de `lib/ListesExternes` / `lib/Images` avec :
-   - statut (prod, legacy, test uniquement),
-   - point(s) d’entrée (`ProcessManager`, `SheetSnapshot`, projet MAJ),
-   - dépendances (Drive, UrlFetch),
-   - plan d’isolation (module dédié `legacyExternalLists` ?).
-2. **Projet MAJ Listes Externes** :
-   - Identifier les fonctions réellement utilisées du bundle `lib` (notamment exports et BigQuery) pour anticiper la migration vers les services refactorés.
-   - Documenter comment `processData` est injecté et quels champs du snapshot sont nécessaires (médias, latestRow).
-3. **Refactor progressif** :
-   - Encapsuler `majListeExterne` dans un mini-service (`ExternalListsService`) pour séparer l’API Kizeo des accès Sheets.
-   - Déplacer les helpers Drive vers un module partagé (`DriveMediaService`) avec dépendances injectables (mockables).
-   - Conserver les wrappers legacy (`saveDataToSheet`, `gestionTableaux`) uniquement côté bibliothèque, en les marquant `@deprecated`.
+| Étape | Dépendances | Observations |
+|-------|-------------|--------------|
+| Ingestion BigQuery (`processData` → `ingestBigQueryPayloads`) | `ProcessManager`, `lib/BigQuery.js` | N’utilise pas la persistance Sheets. La désactivation via `targets.sheet = false` n’impacte pas BigQuery. |
+| Snapshot mémoire (`collectResponseArtifacts`) | `SheetSnapshot.buildRowSnapshot` | Produit toujours `existingHeaders` / `rowEnCours`. Les listes externes s’appuient sur ce snapshot même sans écriture Sheets. |
+| Persistance Sheets (`persistSnapshot`, `lib/Tableaux`) | Héritage consultatif | Peut être désactivée (flag `ENABLE_LEGACY_SHEETS_SYNC`). À supprimer une fois les utilisateurs migrés. |
 
-## 6. Prochaines étapes
+## 6. Actions proposées
 
-- Valider le plan d’inventaire (responsable + échéance) et renseigner le tableau d’usage.
-- Décider si le projet **MAJ Listes Externes/** reste autonome ou doit consommer un module partagé (maîtrise des variations UI vs. bibli).
-- Prioriser l’extraction d’un service API/Drive commun pour faciliter les tests (UrlFetch/Drive mocked).
-- Mettre à jour `docs/tasks-apps-script-refacto.md` en conséquence lorsque l’inventaire sera terminé.
+1. **Isoler le service listes externes** : extraire `buildRowSnapshot` + `majListeExterne` dans un module dédié (`ExternalListsService`) afin de découpler du reste de Sheet legacy.
+2. **Plan de retrait Sheets** : enclencher une période d’observation (flag désactivé par défaut) puis prévoir la suppression de `lib/Tableaux.js` et des wrappers `@deprecated` (`saveDataToSheet`, etc.).
+3. **Service Drive** : encapsuler `lib/Images` dans un module Drive distinct avec dépendances injectables pour les tests (UrlFetch/Drive mockés).
+4. **Documentation & tests** :
+   - Mettre à jour `context-kizeo.md` avec le flux minimal (BigQuery ↔ Snapshots ↔ Listes).
+   - Ajouter un test automatisé couvrant `targets.sheet = false` + mise à jour liste externe.
+   - Continuer à réduire les harness manuels en `zzDescribeScenario()` côtés bibli et projets Sheets.
