@@ -79,7 +79,7 @@ Ce projet est volontairement **séparé du flux BigQuery** :
 | Étape | Owner | Deadline | Notes |
 |-------|-------|----------|-------|
 | Observer `LEGACY_USAGE_*` via `logLegacyUsageStats()` | Ops | déc-2025 | Cibler 0 utilisation avant retrait. |
-| Factoriser `buildRowSnapshot` dans un module `legacySnapshot` | Dev | jan-2026 | Préparer la suppression de `Tableaux.js`. |
+| Extraire l’orchestration (`ProcessManager`) | Dev | jan-2026 | Reposer sur `SheetSnapshot`/`BigQueryService` pour simplifier `processData`. |
 | Mettre à jour la doc (README / AGENTS) sur le stockage Drive | Dev | nov-2025 | Inclure les risques et modes opératoires. |
-| Décider suppression finale du code Sheets | Équipe projet | fév-2026 | Si aucun usage legacy recensé. |
+| Décider suppression finale du code Sheets (`Tableaux.js`) | Équipe projet | fév-2026 | Si aucun usage legacy recensé. |
 | Documenter la séparation `MAJ Listes Externes` vs ingestion BQ | Dev | nov-2025 | Réaffirmer que les listes externes restent gérées côté Sheets. |

@@ -8,6 +8,19 @@
 - Remote execution: run `clasp run main` (for the sheet) or `clasp run bqIngestParentBatch` (for the library) after pushing.
 - To access up‑to‑date documentation while developing, append **`use context7`** to your prompts and enable **Context7 MCP** in Codex (see below).
 
+### État des travaux (30/10/2025)
+- **Modularisation** :
+  - Client API Kizeo isolé dans `lib/KizeoClient.js` (ancien `APIHandler` inchangé pour compatibilité).
+  - Service BigQuery exposé via `lib/BigQueryService.js`.
+  - Logique Sheets legacy déplacée dans `lib/SheetSnapshot.js`; les fonctions historiques (`saveDataToSheet`, `buildRowSnapshot`, …) ne sont plus que des wrappers.
+- **createIngestionServices** renvoie désormais `{ fetch, now, logger, bigQuery, snapshot }`; `processData` consomme ces services.
+- **MAJ Listes Externes** reste pleinement compatible : elle continue d’appeler `processData` et reçoit les mêmes structures (`processResult.medias`, `latestRecord`, etc.).
+- **Tests** : `runAllTests()` passe (26/26). Les tests unitaires vérifient aussi les nouveaux services (snapshot) et la gestion des erreurs simulées.
+- **Docs** :
+  - `docs/legacy-deprecation-plan.md` décrit l’isolement du legacy et le cas particulier “MAJ Listes Externes”.
+  - `docs/module-refactor-roadmap.md` détaille les prochaines étapes (orchestration, refactor triggers, suppression `Tableaux.js`).
+- **À venir** : extraire un module d’orchestration (`ProcessManager`) pour simplifier `processData`, finaliser la suppression du code Sheets résiduel, poursuivre la migration de MAJ Listes Externes vers les nouveaux services lorsque nécessaire.
+
 ---
 
 ## Repository structure
