@@ -19,7 +19,7 @@
 - **Docs** :
   - `docs/legacy-deprecation-plan.md` décrit l’isolement du legacy et le cas particulier “MAJ Listes Externes”.
   - `docs/module-refactor-roadmap.md` détaille les prochaines étapes (orchestration, refactor triggers, suppression `Tableaux.js`).
-- **À venir** : extraire un module d’orchestration (`ProcessManager`) pour simplifier `processData`, finaliser la suppression du code Sheets résiduel, poursuivre la migration de MAJ Listes Externes vers les nouveaux services lorsque nécessaire.
+- **En cours** : finaliser la suppression du code Sheets résiduel et poursuivre la migration de MAJ Listes Externes vers les nouveaux services lorsque nécessaire. L’orchestration a désormais son module dédié (`lib/ProcessManager.js`).
 
 ---
 

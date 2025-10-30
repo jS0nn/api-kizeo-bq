@@ -22,7 +22,7 @@
 - [x] ETL: persister un mapping `{slug,label,type}` (ex. dans `etl_audit` ou table dédiée) pour historiser la nomenclature dynamique.
 - [x] Logs/erreurs: adopter un préfixe cohérent (`lib:module:fct`), centraliser le throttling des mails et enrichir l'audit d'échecs.
 - [x] `handleResponses`: scinder les responsabilités (ingestion BigQuery, mise à jour Sheets, listes externes) et clarifier les retours d'état.
-- [ ] Architecture: découper les rôles principaux en modules dédiés (API, ingestion, persistance Sheets/Drive, orchestration). *(API / BigQuery / Snapshot faits, reste l’orchestration & triggers — cf. `docs/module-refactor-roadmap.md`.)*
+- [x] Architecture: découper les rôles principaux en modules dédiés (API, ingestion, persistance Sheets/Drive, orchestration). *(ProcessManager gère désormais l’orchestration ; restent à traiter les triggers et le nettoyage complet du legacy Sheets.)*
 - [x] Legacy: introduire un flag de feature pour le code historique (Sheets/Drive), vérifier les usages actuels et décider de sa désactivation par défaut.
 
 ## Notes rapides

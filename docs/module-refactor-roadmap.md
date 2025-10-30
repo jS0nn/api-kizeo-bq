@@ -12,7 +12,7 @@
 - ✅ `api` : `lib/KizeoClient.js` opérationnel, `lib/APIHandler.js` agit en wrapper de compatibilité.
 - ✅ `ingest` : `lib/BigQueryService.js` expose toutes les primitives (ensure/ingest/audit/dedup).
 - ✅ `legacy` : `lib/SheetSnapshot.js` regroupe la logique Sheets/Drive, wrappers conservés.
-- ⏳ `orchestration` : à extraire (`processData`, triggers) dans un `ProcessManager`.
+- ✅ `orchestration` : `lib/ProcessManager.js` regroupe `processData`, `handleResponses` et la collecte d’artefacts.
 - ⏳ `media` : découplage Drive optionnel (actuellement géré dans `lib/Images.js`).
 - ✅ `sync` : `lib/ListesExternes.js` reste autonome.
 - ✅ `external-lists` : script “MAJ Listes Externes” documenté, consomme les nouveaux services.
