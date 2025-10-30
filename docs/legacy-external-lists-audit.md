@@ -9,9 +9,10 @@ Cartographier le code legacy encore nécessaire pour la synchronisation des list
 | Module | Fonctions clés | Responsabilités | Consommateurs identifiés | Notes |
 |--------|----------------|-----------------|--------------------------|-------|
 | `lib/ExternalListsService.js` | `updateFromSnapshot`, `replaceItems`, helpers internes | Service central pour mettre à jour les listes Kizeo à partir du snapshot Apps Script. | `ProcessManager.runExternalListsSync`, `MAJ Listes Externes/*`, tests (`lib/zz_Tests`) | Injection des dépendances (`fetch`, `handleException`, `log`). Retourne `Mise A Jour OK` / `IGNORED` / `null`. |
+| `lib/ExternalSnapshot.js` | `buildRowSnapshot`, `prepareDataForSheet`, `extractFields` | Produit le snapshot mémoire (headers + ligne) utilisé par les listes externes et collecte les métadonnées Drive. | `ProcessManager.collectResponseArtifacts`, `ExternalListsService`, tests | Indépendant de la persistance Sheets ; n’appelle plus `lib/Tableaux`. |
 | `lib/ListesExternes.js` | `majListeExterne` (wrapper historique) | Compatibilité globale : expose `majListeExterne` et `replaceKizeoData` en redirigeant vers `ExternalListsService`. | Scripts legacy qui importaient directement `majListeExterne`. | Permet une migration progressive sans casser l’API globale existante. |
 | `lib/Images.js` | `gestionChampImage`, `saveBlobToFolder`, `getOrCreateFolder`, `buildMediaFolderName`, `buildDriveMediaUrls`, `normalizeDrivePublicUrl`, `getCachedDriveFolder`, `lookupFileIdInFolder`, `rememberFileInCache`, `findExistingFileInFolder` | Téléchargement Drive des médias Kizeo, mise en cache des dossiers/fichiers, génération de formules `HYPERLINK` vers les médias ou dossiers. | `SheetSnapshot.buildRowSnapshot`, `lib/Tableaux` (legacy subforms), exports médias/PDF (`sheetInterface/Code.js`), harness **MAJ Listes Externes/ZZ_tests.js** (`saveBlobToFolder`) | Crée des dossiers `Medias <formId> <Nom>` à côté du classeur. Utilise caches en mémoire (réinitialiser en tests). |
-| `lib/Tableaux.js` | `gestionTableaux`, `getOrCreateSheet`, `getOrCreateHeaders`, `getNewHeaders`, `createNewRows`, `appendRowsToSheet`, `createHyperlinkToSheet` | Persistance historique des sous-formulaires dans des onglets Sheets (`Nom || ID || sousForm`) et génération de liens hypertexte. | `SheetSnapshot.prepareDataToRowFormat` (fallback legacy), `ProcessManager.collectResponseArtifacts` via `SheetSnapshot.persistSnapshot` | Chaque ligne appendée déclenche `gestionChampImage` pour les médias. Les onglets restent consultés par les équipes terrain ; aucune automatisation de purge n’est en place. |
+| `lib/Tableaux.js` | `gestionTableaux`, `getOrCreateSheet`, `getOrCreateHeaders`, `getNewHeaders`, `createNewRows`, `appendRowsToSheet`, `createHyperlinkToSheet` | Persistance historique des sous-formulaires dans des onglets Sheets (`Nom || ID || sousForm`) et génération de liens hypertexte. | `SheetSnapshot.prepareDataToRowFormat` (fallback legacy), `ProcessManager.collectResponseArtifacts` via `SheetSnapshot.persistSnapshot` | Chaque ligne appendée déclenche `gestionChampImage` pour les médias. Depuis oct. 2025, `SheetSnapshot` peut sérialiser le sous-formulaire en JSON (`tableaux_fallback_json`) si le module est absent, ce qui facilite sa mise hors service. |
 
 ### 1.1 Fonctions `lib/ListesExternes.js`
 
@@ -62,7 +63,7 @@ Cartographier le code legacy encore nécessaire pour la synchronisation des list
 
 ## 4. Flux legacy encore en service
 
-1. **Ingestion + snapshot** : `processData` collecte les réponses, écrit dans BigQuery puis, si l’option Sheets est active, persiste un snapshot (`SheetSnapshot` → `lib/Tableaux` + `lib/Images`).
+1. **Ingestion + snapshot** : `processData` collecte les réponses, écrit dans BigQuery puis produit un snapshot mémoire (`ExternalSnapshot`). Aucune écriture Sheets n’est effectuée.
 2. **Listes externes** : `ProcessManager.runExternalListsSync` consomme ce snapshot pour mettre à jour Kizeo via `majListeExterne`. Les équipes peuvent ensuite exporter les listes depuis le projet **MAJ Listes Externes**.
 3. **Exports médias** : `gestionChampImage` continue d’alimenter les dossiers Drive `Medias <formId>` ; les exports PDF/médias (`sheetInterface/Code.js`, **MAJ Listes Externes**) réutilisent `saveBlobToFolder`.
 
@@ -70,16 +71,16 @@ Cartographier le code legacy encore nécessaire pour la synchronisation des list
 
 | Étape | Dépendances | Observations |
 |-------|-------------|--------------|
-| Ingestion BigQuery (`processData` → `ingestBigQueryPayloads`) | `ProcessManager`, `lib/BigQuery.js` | N’utilise pas la persistance Sheets. La désactivation via `targets.sheet = false` n’impacte pas BigQuery. |
+| Ingestion BigQuery (`processData` → `ingestBigQueryPayloads`) | `ProcessManager`, `lib/BigQuery.js` | Complètement indépendante des feuilles. BigQuery est l’unique destination des données de formulaire. |
 | Snapshot mémoire (`collectResponseArtifacts`) | `SheetSnapshot.buildRowSnapshot` | Produit toujours `existingHeaders` / `rowEnCours`. Les listes externes s’appuient sur ce snapshot même sans écriture Sheets. |
-| Persistance Sheets (`persistSnapshot`, `lib/Tableaux`) | Héritage consultatif | Peut être désactivée (flag `ENABLE_LEGACY_SHEETS_SYNC`). À supprimer une fois les utilisateurs migrés. |
+| Persistance Sheets (`persistSnapshot`, `lib/Tableaux`) | Héritage consultatif | Désactivée en dur. Le module reste présent uniquement pour compatibilité historique en cas de besoin exceptionnel. |
 
 ## 6. Actions proposées
 
 1. **Isoler le service listes externes** : extraire `buildRowSnapshot` + `majListeExterne` dans un module dédié (`ExternalListsService`) afin de découpler du reste de Sheet legacy.
 2. **Plan de retrait Sheets** : enclencher une période d’observation (flag désactivé par défaut) puis prévoir la suppression de `lib/Tableaux.js` et des wrappers `@deprecated` (`saveDataToSheet`, etc.).
 3. **Service Drive** : encapsuler `lib/Images` dans un module Drive distinct avec dépendances injectables pour les tests (UrlFetch/Drive mockés).
-4. **Documentation & tests** :
+- **Documentation & tests** :
    - Mettre à jour `context-kizeo.md` avec le flux minimal (BigQuery ↔ Snapshots ↔ Listes).
-   - Ajouter un test automatisé couvrant `targets.sheet = false` + mise à jour liste externe.
+   - Ajouter un test automatisé validant la mise à jour des listes externes en l’absence totale de persistance Sheets.
    - Continuer à réduire les harness manuels en `zzDescribeScenario()` côtés bibli et projets Sheets.

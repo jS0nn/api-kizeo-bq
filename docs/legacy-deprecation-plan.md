@@ -14,12 +14,15 @@ Instrumentation ajoutée :
 
 ## 2. Observations
 
-1. **`saveDataToSheet` & `lib/Tableaux.js`** : l’instrumentation confirme l’absence d’appels depuis l’activation du flag `ENABLE_LEGACY_SHEETS_SYNC`. Ces fonctions sont donc candidates à la suppression pure et simple une fois la période de monitoring terminée.
+1. **`saveDataToSheet` & `lib/Tableaux.js`** : la persistance Sheets est désormais désactivée en dur ; l’instrumentation confirme l’absence d’appels. Ces fonctions sont donc candidates à la suppression pure et simple une fois la période de monitoring terminée.
 2. **`prepareDataForSheet` & co.** : toujours nécessaires pour construire les snapshots destinés à :
    - l’update des listes externes (`runExternalListsSync`),
    - la collecte des médias Drive (`buildRowSnapshot`),
    - les rapports UI (ex. export manuel).
+   Ces fonctions résident désormais dans `lib/ExternalSnapshot.js`, indépendant de `SheetSnapshot`.
 3. **`lib/Images.js`** : la logique Drive est volontaire. BigQuery ne stocke que les métadonnées (`drive_file_id`, URLs, dossier). La suppression du traitement Drive n’est pas souhaitée : les utilisateurs consomment toujours les médias via Drive/Looker.
+4. **Instrumentation `SheetSnapshot` (oct. 2025)** : les appels legacy enregistrent désormais `prepare_data_for_sheet`, `prepare_sheet`, `get_column_indices`, `prepare_data_to_row_format`, `build_row_snapshot`, `tableaux_call`, `tableaux_fallback_json`, `persist_snapshot` et `saveDataToSheet`. Si `gestionTableaux` est absent, le sous-formulaire est sérialisé en JSON et consigné dans les logs (`legacy:SheetSnapshot`). Cette garde garantit que la suppression de `lib/Tableaux.js` n’interrompt pas l’ingestion.
+5. **`SheetSnapshot`** : ne conserve plus que les wrappers legacy (persistance Sheets). Toute la logique snapshot utile aux listes externes vit dans `lib/ExternalSnapshot.js`.
 
 ## 3. Plan de retrait
 
@@ -35,11 +38,12 @@ Instrumentation ajoutée :
 ### Étape 2 — Isolation
 1. Déplacer les fonctions encore utiles (`prepareDataForSheet`, `getDataFromFields`, etc.) dans un module dédié (`lib/SheetSnapshot.js`). *(fait)*
 2. Extraire `buildRowSnapshot` pour qu’il dépende uniquement de ce module, en supprimant les références directes à `saveDataToSheet`.
-3. Marquer le module d’un flag `ENABLE_LEGACY_SNAPSHOT` si besoin (permet de désactiver entièrement le traitement Sheets/Drive dans certains environnements).
+3. (Optionnel) Marquer le module d’un flag `ENABLE_LEGACY_SNAPSHOT` si besoin — le flag historique `ENABLE_LEGACY_SHEETS_SYNC` est désormais ignoré.
  4. Retirer les helpers Sheets obsolètes (`ensureFormActionCode`, `upsertFormConfig`) afin de réduire la surface legacy. *(fait)*
 
 ### Étape 3 — Suppression
 1. Supprimer `saveDataToSheet` et tout `lib/Tableaux.js` après validation des points ci-dessus.
+   - Grâce à `tableaux_fallback_json`, la migration pourra se faire même si des scripts annexes n’embarquent plus `lib/Tableaux.js`.
 2. Effacer les clés `LEGACY_USAGE_*` des `DocumentProperties` et retirer `recordLegacyUsage`.
 3. Documenter le changement dans `context-kizeo.md` et le changelog du projet.
 

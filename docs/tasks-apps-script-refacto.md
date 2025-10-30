@@ -7,7 +7,7 @@
 - [x] Supprimer les fonctions orphelines (`lib/Outils.generateActionCode`, `formatNumberAllSheets`, `reduireJSON`, `reduireJSON2`, `lib/zz_archives.writeData`) ou les déplacer dans `zz_*` si besoin de debug.
 - [x] Retirer les modules obsolètes liés aux feuilles (`lib/GestionDonneesMaJ`, `lib/DataNonLues`) et mettre `context-kizeo.md` en cohérence.
 - [x] Auditer `lib/ListesExternes`, `lib/Images`, `lib/Tableaux` et le répertoire **MAJ Listes Externes/** pour isoler les helpers legacy / tests et documenter les dépendances restantes. *(Voir `docs/legacy-external-lists-audit.md`.)*
-- [ ] Planifier la suppression de `lib/Tableaux.js` et des wrappers legacy (`saveDataToSheet`, `prepareDataForSheet`, etc.) une fois la période de monitoring terminée.
+- [ ] Planifier la suppression de `lib/Tableaux.js` et des wrappers legacy (`saveDataToSheet`, `prepareDataForSheet`, etc.) une fois la période de monitoring terminée. *(Instrumentation `prepare_*`, `tableaux_call`, `tableaux_fallback_json` opérationnelle ; en attente du feu vert pour retirer définitivement le module. Le flag `ENABLE_LEGACY_SHEETS_SYNC` est désormais ignoré.)*
 - [x] Documenter la procédure manuelle `setScriptProperties('termine')` dans `README.md` (section dépannage) pour éviter les confusions.
 
 ## 2. Pipeline d’ingestion & découplage *(P1)*
@@ -15,7 +15,7 @@
 - [x] Éviter la double requête `data/unread` : partager la réponse entre `main()` (sheetInterface) et `processData`.
 - [x] Injecter les dépendances (`SpreadsheetApp`, `BigQuery`, `DriveApp`) via paramètres ou wrappers pour faciliter les mocks.
 - [x] Clarifier les responsabilités : écrire dans Sheets vs. pousser vers BigQuery, afin de pouvoir désactiver l’un sans impacter l’autre.
-- [x] Ajouter un interrupteur de configuration (`ingest_bigquery`) pour piloter l’ingestion BigQuery sans modifier le code.
+- [x] Ajouter un interrupteur de configuration (`ingest_bigquery`) pour piloter l’ingestion BigQuery sans modifier le code. *(Obsolète : l’ingestion BigQuery est désormais toujours active.)*
 
 ## 3. Configuration et secrets *(P1)*
 - [x] Conserver la lecture du token Kizeo via la feuille dédiée mais ajouter un cache `ScriptProperties` + invalidation automatique (`lib/KizeoClient.js`).
@@ -31,7 +31,7 @@
 
 ## 5. Tests & validation *(P2)*
 - [ ] Transformer les scénarios manuels en fonctions `zzDescribeScenario()` documentées (`lib/zz_Tests`, `sheetInterface/ZZ_tests`).
-- [ ] Ajouter un test automatisé couvrant `targets.sheet = false` + mise à jour de liste externe.
+- [ ] Ajouter un test automatisé vérifiant la mise à jour des listes externes sans persistance Sheets.
 - [ ] Couvrir au moins un test d’ingestion complet (form ID fictif) et un test d’export Drive.
 - [ ] Ajouter une checklist “run manuel” (clasp push/run, vérif tables BigQuery, inspection Drive) dans `TASKS.md`.
 - [ ] Préparer un plan de migration vers des tests automatisés (Apps Script + mocks UrlFetch/BigQuery) lorsque l’API le permettra.
