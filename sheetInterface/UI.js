@@ -186,7 +186,16 @@ function enregistrementUI(formulaire) {
           tableName
         });
       }
-      main({ origin: 'ui_dialog', skipLockCheck: true });
+      try {
+        const toastMessage =
+          "Formulaire configuré. Utilisez 'Actualiser BigQuery' pour récupérer les nouvelles données.";
+        const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+        if (spreadsheet) {
+          spreadsheet.toast(toastMessage, 'Configuration terminée', 8);
+        }
+      } catch (toastError) {
+        console.log(`enregistrementUI: toast KO -> ${toastError}`);
+      }
     } finally {
       setScriptProperties('termine');
     }

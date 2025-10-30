@@ -83,3 +83,10 @@ Ce projet est volontairement **séparé du flux BigQuery** :
 | Mettre à jour la doc (README / AGENTS) sur le stockage Drive | Dev | nov-2025 | Inclure les risques et modes opératoires. |
 | Décider suppression finale du code Sheets (`Tableaux.js`) | Équipe projet | fév-2026 | Si aucun usage legacy recensé. |
 | Documenter la séparation `MAJ Listes Externes` vs ingestion BQ | Dev | nov-2025 | Réaffirmer que les listes externes restent gérées côté Sheets. |
+
+## 6. Audit legacy (Q4 2025)
+
+- Dresser l’inventaire des helpers réellement utilisés dans `lib/ListesExternes.js` et `lib/Images.js`, en les classant par usage (ingestion vs. export listes externes).
+- Mettre en évidence, dans le projet **MAJ Listes Externes/**, les points d’entrée qui dépendent encore du legacy (`buildRowSnapshot`, traitements Drive) pour préparer leur isolation.
+- Identifier les fonctions candidates à la suppression ou au déplacement dans un module dédié « legacy external lists », avec un plan de migration ou de refactor léger.
+- Référence : [docs/legacy-external-lists-audit.md](legacy-external-lists-audit.md) pour la synthèse des dépendances.

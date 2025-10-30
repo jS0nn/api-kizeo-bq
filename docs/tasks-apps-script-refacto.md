@@ -6,7 +6,7 @@
 ## 1. Hygiène du code et nettoyage *(P1)*
 - [x] Supprimer les fonctions orphelines (`lib/Outils.generateActionCode`, `formatNumberAllSheets`, `reduireJSON`, `reduireJSON2`, `lib/zz_archives.writeData`) ou les déplacer dans `zz_*` si besoin de debug.
 - [x] Retirer les modules obsolètes liés aux feuilles (`lib/GestionDonneesMaJ`, `lib/DataNonLues`) et mettre `context-kizeo.md` en cohérence.
-- [ ] Passer en revue `lib/ListesExternes` et `lib/Images` pour isoler les helpers utilisés uniquement par des tests.
+- [x] Auditer `lib/ListesExternes`, `lib/Images`, `lib/Tableaux` et le répertoire **MAJ Listes Externes/** pour isoler les helpers legacy / tests et documenter les dépendances restantes. *(Voir `docs/legacy-external-lists-audit.md`.)*
 - [x] Documenter la procédure manuelle `setScriptProperties('termine')` dans `README.md` (section dépannage) pour éviter les confusions.
 
 ## 2. Pipeline d’ingestion & découplage *(P1)*
@@ -17,15 +17,15 @@
 - [x] Ajouter un interrupteur de configuration (`ingest_bigquery`) pour piloter l’ingestion BigQuery sans modifier le code.
 
 ## 3. Configuration et secrets *(P1)*
-- [ ] Déplacer la lecture du token Kizeo vers `ScriptProperties` + cache local, supprimer le `openById` hardcodé (`lib/APIHandler`) *(reporté, décision de conserver la logique actuelle pour l'instant)*.
-- [ ] Valider la présence des propriétés BigQuery en amont (UI + librairie) avec des messages d’erreur explicites.
+- [x] Conserver la lecture du token Kizeo via la feuille dédiée mais ajouter un cache `ScriptProperties` + invalidation automatique (`lib/KizeoClient.js`).
+- [x] Valider la présence des propriétés BigQuery en amont (UI + librairie) avec des messages d’erreur explicites.
 - [ ] Documenter la procédure de mise à jour des secrets (README + `context-kizeo.md`).
 
 ## 4. Robustesse & observabilité *(P2)*
-- [ ] Enrichir `handleException` pour classifier les erreurs (HTTP, quota, auth) et restituer une structure commune aux appelants.
-- [ ] Ajouter des retries/backoff sur les points sensibles (UrlFetch Kizeo, BigQuery streaming, Drive).
+- [x] Enrichir `handleException` pour classifier les erreurs (HTTP, quota, auth) et restituer une structure commune aux appelants.
+- [x] Ajouter des retries/backoff sur les points sensibles (UrlFetch Kizeo, BigQuery streaming, Drive).
 - [ ] Tracer la consommation (temps, quota) dans les logs et envisager une feuille/BigQuery d’audit minimale.
-- [ ] Harmoniser les retours d’état des exports PDF/Média (succès, partial, échec).
+- [x] Harmoniser les retours d’état des exports PDF/Média (succès, partial, échec).
 
 ## 5. Tests & validation *(P2)*
 - [ ] Transformer les scénarios manuels en fonctions `zzDescribeScenario()` documentées (`lib/zz_Tests`, `sheetInterface/ZZ_tests`).

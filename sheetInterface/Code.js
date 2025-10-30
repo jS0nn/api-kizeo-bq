@@ -731,6 +731,52 @@ function notifyConfigErrors(validation) {
   console.log(`Configuration invalide détectée: ${message}`);
 }
 
+function ensureBigQueryConfigAvailability(ingestFlag, sheetName) {
+  if (ingestFlag === 'false') {
+    return true;
+  }
+  if (typeof libKizeo === 'undefined' || typeof libKizeo.getBigQueryConfig !== 'function') {
+    return true;
+  }
+  try {
+    libKizeo.getBigQueryConfig({ throwOnMissing: true });
+    return true;
+  } catch (configError) {
+    const missingKeys = Array.isArray(configError.missingKeys) && configError.missingKeys.length
+      ? configError.missingKeys.join(', ')
+      : 'BQ_PROJECT_ID / BQ_DATASET';
+    const message =
+      `Configuration BigQuery incomplète (${missingKeys}).\n` +
+      'Utilisez le menu « Configurer BigQuery » avant de relancer le traitement.';
+    try {
+      const ui = SpreadsheetApp.getUi();
+      if (ui) {
+        ui.alert('Configuration BigQuery manquante', message, ui.ButtonSet.OK);
+      }
+    } catch (uiError) {
+      try {
+        const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+        if (spreadsheet) {
+          spreadsheet.toast(message, 'Configuration BigQuery', 10);
+        }
+      } catch (toastError) {
+        console.log(`ensureBigQueryConfigAvailability: notification impossible -> ${toastError}`);
+      }
+    }
+    try {
+      if (typeof libKizeo.handleException === 'function') {
+        libKizeo.handleException('main.BigQueryConfig', configError, {
+          missingKeys: missingKeys,
+          sheet: sheetName || ''
+        });
+      }
+    } catch (handleError) {
+      console.log(`ensureBigQueryConfigAvailability: handleException KO -> ${handleError}`);
+    }
+    return false;
+  }
+}
+
 function notifyExecutionAlreadyRunning(options) {
   const opts = options || {};
   const toastMessage =
@@ -835,6 +881,10 @@ function main(options) {
     };
     const batchLimit = context.batchLimit || DEFAULT_KIZEO_BATCH_LIMIT;
     const action = validation.config.action;
+    const ingestFlag = validation.config[CONFIG_INGEST_BIGQUERY_KEY];
+    if (!ensureBigQueryConfigAvailability(ingestFlag, context.sheet ? context.sheet.getName() : '')) {
+      return;
+    }
 
     // ---------- Récupération des nouvelles données pour les exports ----------
     const unreadResp = libKizeo.requeteAPIDonnees(
@@ -1002,6 +1052,21 @@ function runBigQueryDeduplication() {
     tableName,
     alias: aliasPart
   };
+  const ingestFlag = validation.config[CONFIG_INGEST_BIGQUERY_KEY];
+  if (ingestFlag === 'false') {
+    return {
+      status: 'SKIPPED',
+      reason: 'BIGQUERY_DISABLED',
+      message: "L'ingestion BigQuery est désactivée pour ce formulaire."
+    };
+  }
+  if (!ensureBigQueryConfigAvailability(ingestFlag, context.sheet ? context.sheet.getName() : '')) {
+    return {
+      status: 'ERROR',
+      reason: 'MISSING_BIGQUERY_CONFIG',
+      message: 'Configuration BigQuery manquante.'
+    };
+  }
 
   Logger.log(`runBigQueryDeduplication: lancement pour ${formulaire.id} (${tableName})`);
 
