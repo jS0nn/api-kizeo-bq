@@ -19,10 +19,10 @@ Instrumentation ajoutée :
    - l’update des listes externes (`runExternalListsSync`),
    - la collecte des médias Drive (`buildRowSnapshot`),
    - les rapports UI (ex. export manuel).
-   Ces fonctions résident désormais dans `lib/ExternalSnapshot.js`, indépendant de `SheetSnapshot`.
+   Ces fonctions résident désormais dans `lib/FormResponseSnapshot.js`, indépendant de `SheetSnapshot`.
 3. **`lib/Images.js`** : la logique Drive est volontaire. BigQuery ne stocke que les métadonnées (`drive_file_id`, URLs, dossier). La suppression du traitement Drive n’est pas souhaitée : les utilisateurs consomment toujours les médias via Drive/Looker.
 4. **Instrumentation `SheetSnapshot` (oct. 2025)** : les appels legacy enregistrent désormais `prepare_data_for_sheet`, `prepare_sheet`, `get_column_indices`, `prepare_data_to_row_format`, `build_row_snapshot`, `tableaux_call`, `tableaux_fallback_json`, `persist_snapshot` et `saveDataToSheet`. Si `gestionTableaux` est absent, le sous-formulaire est sérialisé en JSON et consigné dans les logs (`legacy:SheetSnapshot`). Cette garde garantit que la suppression de `lib/Tableaux.js` n’interrompt pas l’ingestion.
-5. **`SheetSnapshot`** : ne conserve plus que les wrappers legacy (persistance Sheets). Toute la logique snapshot utile aux listes externes vit dans `lib/ExternalSnapshot.js`.
+5. **`SheetSnapshot`** : ne conserve plus que les wrappers legacy (persistance Sheets). Toute la logique snapshot utile aux listes externes vit dans `lib/FormResponseSnapshot.js`.
 
 ## 3. Plan de retrait
 
