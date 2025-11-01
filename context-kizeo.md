@@ -177,7 +177,7 @@ erDiagram
 ### Arborescences
 | Répertoire | Contenu |
 |---|---|
-| `lib/` | `0_Data.js`, `backfill.js`, `bigquery/ingestion.js`, `DriveMediaService.js`, `ExternalListsService.js`, `FormResponseSnapshot.js`, `GestionErreurs.gs.js`, `KizeoClient.js`, `ProcessManager.js`, `SheetInterfaceHelpers.js`, `SheetConfigHelpers.js`, `SheetDriveExports.js`, `process/`, `Outils.js`, `zz_Tests.js`, `appsscript.json`. |
+| `lib/` | `0_Data.js`, `backfill.js`, `bigquery/ingestion.js`, `DriveMediaService.js`, `ExternalListsService.js`, `FormResponseSnapshot.js`, `GestionErreurs.gs.js`, `KizeoClient.js`, `ProcessManager.js`, `SheetInterfaceHelpers.js`, `SheetConfigHelpers.js`, `SheetDriveExports.js`, `process/` (`collector`, `external-lists`, `ingest-bigquery`, `subforms`, `unread`, `utils`), `Outils.js`, `zz_PublicApi.js`, `zz_Tests.js`, `appsscript.json`. |
 | `sheetInterface/` | `Code.js`, `outils.js`, `UI.js`, `appsscript.json`, `afficheSelectForm.html`, `timeIntervalSelector.html`, `ZZ_tests.js`. |
 
 ### Manifests Apps Script
@@ -200,7 +200,7 @@ erDiagram
 
 > Note : `lib/Tableaux.js` et `lib/SheetSnapshot.js` ont été retirés (octobre 2025). La construction des snapshots et la sérialisation des sous-formulaires sont gérées exclusivement par `lib/FormResponseSnapshot.js`.
 
-Lien bibliothèque → script : le script lié appelle les fonctions exposées par la librairie `libKizeo` (ex. `processData` dans `sheetInterface/Code.js:173`, `handleException` dans `sheetInterface/UI.js:11`).
+Lien bibliothèque → script : le script lié appelle les fonctions exposées par la librairie `libKizeo` (ex. `processData` dans `sheetInterface/Code.js:173`, `handleException` dans `sheetInterface/UI.js:11`). `lib/zz_PublicApi.js` fige cette surface via `getLibPublicApi()` en s’appuyant sur `getLibPublicSymbols()`.
 
 ## Function Inventory
 **Sommaire rapide (A→Z)** : `afficheMenu`, `appendRowsToSheet`, `bqBackfillForm`, `chargeSelectForm`, `chargelisteFormulaires`, `configurerDeclencheurHoraire`, `createHyperlinkToSheet`, `createNewRows`, `deleteAllTriggers`, `emailLogger`, `enregistrementUI`, `exportMedias`, `exportPdfBlob`, `getColumnIndices`, `getDataFromFields`, `getEtatExecution`, `getNewHeaders`, `getOrCreateFolder`, `getOrCreateHeaders`, `getOrCreateSheet`, `getOrCreateSubFolder`, `gestionChampImage`, `gestionFeuilles`, `gestionTableaux`, `handleException`, `handleResponses`, `isNumeric`, `main`, `ExternalListsService.updateFromSnapshot`, `majSheet`, `onOpen`, `openTriggerFrequencyDialog`, `prepareDataForSheet`, `prepareDataToRowFormat`, `prepareSheet`, `processData`, `processIntervalChoice`, `requeteAPIDonnees`, `saveBlobToFolder`, `saveDataToSheet`, `setScriptProperties`, `setScriptPropertiesTermine`.
@@ -217,7 +217,7 @@ Lien bibliothèque → script : le script lié appelle les fonctions exposées p
 | `createHyperlinkToSheet(spreadsheet, sheet)` | `lib/Tableaux.js:129` | Génère une formule `HYPERLINK` vers un sous-onglet. | `Spreadsheet`, `Sheet` | `string` | Aucun. | — | `gestionTableaux` | Pas de gestion spécifique. |
 | `createNewRows(tableau, idReponse, headers, formId, spreadsheet)` | `lib/Tableaux.js:93` | Formate les lignes d’un sous-formulaire (y compris médias). | `Array<Object>`, `string`, `Array<string>`, `string`, `Spreadsheet` | `Array<Array>` | Peut déclencher téléchargements médias. | `gestionChampImage`, `isNumeric` | `gestionTableaux` | Exceptions capturées en amont par `gestionTableaux`. |
 | `deleteAllTriggers()` | `sheetInterface/outils.js:32` | Supprime tous les déclencheurs du projet. | — | — | `ScriptApp.deleteTrigger`. | `ScriptApp.getProjectTriggers` | `configurerDeclencheurHoraire`, `processIntervalChoice` | `handleException`. |
-| `emailLogger(javascriptObject, functionName, context, fileName)` | `lib/Outils.js:51` | Envoie un JSON de debug par email. | `Object`, `string`, `Object`, `string` | — | Envoi MailApp + pièce jointe. | `MailApp.sendEmail` | Tests (`lib/zz_Tests.js`) | Pas de retry. |
+| `emailLogger(javascriptObject, functionName, context, fileName)` | `lib/zz_Tests.js` | Envoie un JSON de debug par email (scénarios manuels). | `Object`, `string`, `Object`, `string` | — | Envoi MailApp + pièce jointe. | `MailApp.sendEmail` | Tests (`lib/zz_Tests.js`) | Pas de retry. |
 | `enregistrementUI(formulaire)` | `sheetInterface/UI.js:62` | Prépare un formulaire sélectionné et lance `main`. | `{id, nom}` | — | Met à jour ScriptProperties, appelle `gestionFeuilles` puis `main`. | `Session.getActiveUser`, `setScriptProperties`, `gestionFeuilles`, `main` | Soumission UI | `handleException`. |
 | `exportMedias(mediaList, targetFolderId)` | `sheetInterface/Code.js:100` | Copie les médias collectés dans un sous-dossier Drive `media`. | `Array`, `string` | — | Copie de fichiers Drive. | `getOrCreateSubFolder`, `DriveApp.getFileById` | `main` | Try/catch interne (log), pas de retry. |
 | `exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId)` | `sheetInterface/Code.js:89` | Sauvegarde un export PDF dans Drive avec nom horodaté. | `string`, `string`, `Blob`, `string` | — | Écriture Drive via `saveBlobToFolder`. | `saveBlobToFolder` | `main` | Exceptions remontées (catch dans `main`). |

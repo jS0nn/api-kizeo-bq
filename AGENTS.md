@@ -14,6 +14,9 @@
   - Orchestration simplifiée : `lib/ProcessManager.js` prépare le formulaire, assure BigQuery et finalise l’exécution via des étapes dédiées (`prepareFormulaireForRun`, `ensureBigQueryForForm`, `handleResponses`).
   - Helpers UI partagés : `lib/SheetInterfaceHelpers.js` centralise la mise en forme des onglets de configuration, les notifications d’exécution en cours et la vérification BigQuery.
   - Helpers configuration : `lib/SheetConfigHelpers.js` mutualise lecture/écriture/validation de la feuille `Config` et le calcul du contexte formulaire.
+  - Stockage config : `SheetConfigHelpers.readStoredConfig()` remplace l’ancien `getFormConfig` de `lib/Outils.js`; `Outils.js` ne conserve que la gestion des feuilles (`gestionFeuilles`) et utilitaires numériques.
+  - API publique gelée via `lib/zz_PublicApi.js` (`getLibPublicApi`) à partir de `LIB_PUBLIC_SYMBOLS`, ce qui supprime les assignations `this.*`.
+  - Normalisation des sous-formulaires déplacée de `Outils.js` vers `lib/process/subforms.js` (consommée par `FormResponseSnapshot` et l’ingestion BigQuery).
 - Service BigQuery exposé directement via `lib/bigquery/ingestion.js` (toutes les fonctions sont globales).
   - Gestion Drive centralisée dans `lib/DriveMediaService.js`; `FormResponseSnapshot` appelle le service sans wrapper intermédiaire.
   - Les scripts liés consomment désormais les fonctions globales (`processData`, `requeteAPIDonnees`, `ensureBigQueryCoreTables`, …) sans alias.
@@ -34,11 +37,12 @@
   - `0_Data.js`: référentiel des symboles publics (`getLibPublicSymbols`) et constantes partagées.
   - `backfill.js`: exécution des backfills BigQuery (lecture Kizeo `data/all`).
   - `bigquery/ingestion.js`: BigQuery ingestion logic.
-  - `process/`: orchestration (`collector`, `unread`, `external-lists`, `utils`).
+  - `process/`: orchestration (`collector`, `unread`, `external-lists`, `utils`, `subforms`).
   - `KizeoClient.js`: client HTTP Kizeo (token, retries).
   - `DriveMediaService.js`: Drive media/download helpers (processField, saveBlobToFolder).
   - `ExternalListsService.js`: synchronisation des listes externes Kizeo.
-  - `Outils.js`: utilities for synchronising data with Sheets.
+  - `Outils.js`: gestion des feuilles (création/renommage), accès configuration Sheets et helpers numériques.
+  - `zz_PublicApi.js`: agrégation figée de l’API publique (remplace les exports `this.*` dispersés).
 - `sheetInterface/` — bound script and UI:
   - `UI.js`, `timeIntervalSelector.html`: menus, dialogs and triggers.
 - `zz_*.js` — exploratory code and manual test harnesses.
@@ -82,7 +86,7 @@ Consult the official `clasp` documentation for details on `pull`, `push`, `login
 
 - Use **2‑space indentation**, **single quotes** and **camelCase** for functions and variables. Reserve `SCREAMING_SNAKE_CASE` for configuration constants (e.g. `BQ_DEFAULT_CONFIG`).
 - Keep functions short. Use early returns instead of deeply nested conditionals. Avoid hidden side effects.
-- Place shared utilities in `Outils.js` and prefer small, composable helpers to long procedures.
+- Place les helpers Sheets dans `Outils.js` (création d’onglets, lecture config) et la normalisation des sous-formulaires dans `lib/process/subforms.js`; privilégier de petits helpers composables plutôt que de longues procédures.
 - Logging: at the beginning of critical functions, prefix messages with `lib:module:function` (e.g. `lib:BigQuery:bqEnsureDataset…`).
 - Error handling: use guard clauses at the top of functions; provide useful error messages; avoid silent `try/catch` blocks.
 

@@ -47,3 +47,8 @@
   - ✅ `zzDescribeScenarioSheetInterface` — `{"isValid":true,"tableName":"formulaire_sc_nario_form_scenario","batchLimit":15,"availability":true}` (utilise `SheetConfigHelpers`).
 - ✅ `zzDescribeScenarioSyncExternalLists` — `{"configValid":true,"validationErrors":[],"external":{"status":"Mise A Jour OK","putCalls":1,"samplePayload":{"items":["id:id|champ:champ","rec-000:rec-000|Valeur mise à jour:Valeur mise à jour"]}}}`.
 - Observations : `lib/SheetConfigHelpers.js` + `lib/SheetDriveExports.js` alimentent les deux scripts Sheets (config + exports Drive) ; plus de duplication locale et notifications/verrous alignés.
+
+## 2025-11-02 — API publique gelée
+- Fonctions : `node tests/run-tests.js`.
+- Résultat : ✅ `Tous les tests sont passés.` (nouvelle couverture `getLibPublicApi fige l’API exposée`).
+- Observations : `lib/zz_PublicApi.js` construit l’objet figé à partir de `LIB_PUBLIC_SYMBOLS`; suppression des exports `this.*` et extraction des helpers sous-formulaire vers `lib/process/subforms.js`.

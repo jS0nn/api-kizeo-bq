@@ -34,6 +34,7 @@
 - [x] Ajouter un test automatisé vérifiant la mise à jour des listes externes sans persistance Sheets. *(Couvert par `zzDescribeScenarioMajListesExternes` / `zzDescribeScenarioSyncExternalLists` + `tests/run-tests.js`)*
 - [ ] Couvrir au moins un test d’ingestion complet (form ID fictif) et un test d’export Drive.
 - [ ] Renseigner les résultats des exécutions dans `docs/test-runs.md` (journal partagé).
+- [ ] Formaliser une checklist manuelle post-`clasp push` (menu `onOpen`, sélection formulaire, triggers, ingestion, MAJ listes externes) et l’intégrer dans `docs/test-runs.md` ou `README.md`.
 
 ## 6. Simplification sans rétrocompatibilité *(P1)*
 > Référence : [`docs/spec-simplification-architecture.md`](spec-simplification-architecture.md)

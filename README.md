@@ -1,7 +1,7 @@
 # Kizeo → Sheets → BigQuery
 
 ## Vue d’ensemble
-- Automatisation Apps Script divisée en deux projets : une bibliothèque (`lib/`) et un script lié à un classeur (`sheetInterface/`). Les fonctions de la bibliothèque sont exposées directement dans l’espace global (`processData`, `requeteAPIDonnees`, `bqComputeTableName`, …).
+- Automatisation Apps Script divisée en deux projets : une bibliothèque (`lib/`) et un script lié à un classeur (`sheetInterface/`). Les fonctions de la bibliothèque sont exposées directement dans l’espace global (`processData`, `requeteAPIDonnees`, `bqComputeTableName`, …). L’objet figé retourné par `getLibPublicApi()` (défini dans `lib/zz_PublicApi.js`) permet d’inspecter cette surface et remplace les anciens exports `this.*`.
 - Les manifests (`sheetInterface/appsscript.json`, `MAJ Listes Externes/appsscript.json`) référencent la bibliothèque sous le symbole `libKizeo` uniquement pour la charger ; le code applicatif invoque désormais les fonctions globales sans alias supplémentaire.
 - Ingestion des formulaires Kizeo, synchronisation des sous-formulaires et export des médias vers Drive.
 - Déduplication BigQuery déclenchée automatiquement et disponible à la demande depuis le menu du classeur.
@@ -111,7 +111,7 @@ Les scripts liés (`sheetInterface/`, `MAJ Listes Externes/`) appellent directem
 
 ## Dépannage
 - **Script bloqué (`etatExecution = 'enCours'`)** : exécuter la fonction `setScriptPropertiesTermine()` depuis l’éditeur Apps Script ou lancer `clasp run setScriptPropertiesTermine`. Elle délègue à `setScriptProperties('termine')` et libère le verrou manuel sans toucher aux autres propriétés.
-- **Journalisation d’une réponse volumineuse** : utiliser `emailLogger()` dans `lib/Outils.js` ou, pour réduire le payload, les helpers `reduireJSON*` déplacés dans `lib/zz_Tests.js` (scénarios manuels uniquement).
+- **Journalisation d’une réponse volumineuse** : utiliser `emailLogger()` (exposé dans `lib/zz_Tests.js` pour les scénarios manuels) ou, pour réduire le payload, les helpers `reduireJSON*` du même fichier.
 - **Inspection ponctuelle d’une ingestion** : privilégier les fonctions `zzDescribeScenario()` dans `zz_Tests.js` / `sheetInterface/ZZ_tests.js` afin d’isoler le contexte plutôt que de modifier la librairie.
 
 ## Bonnes pratiques de commit & PR

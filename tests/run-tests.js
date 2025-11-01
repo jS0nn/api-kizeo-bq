@@ -42,6 +42,48 @@ function runFile(relativePath, context) {
   vm.runInContext(code, context, { filename: relativePath });
 }
 
+function buildPublicApiContext(overrides = {}) {
+  const functionStubs = {
+    handleException: function handleException() {},
+    requeteAPIDonnees: function requeteAPIDonnees() {},
+    processData: function processData() {},
+    handleResponses: function handleResponses() {},
+    markResponsesAsRead: function markResponsesAsRead() {},
+    createIngestionServices: function createIngestionServices() {},
+    buildExecutionTargets: function buildExecutionTargets() {},
+    resolveBatchLimit: function resolveBatchLimit() {},
+    resolveIsoTimestamp: function resolveIsoTimestamp() {},
+    resolveUnreadDataset: function resolveUnreadDataset() {},
+    collectResponseArtifacts: function collectResponseArtifacts() {},
+    ingestBigQueryPayloads: function ingestBigQueryPayloads() {},
+    runExternalListsSync: function runExternalListsSync() {},
+    initBigQueryConfig: function initBigQueryConfig() {},
+    ensureBigQueryCoreTables: function ensureBigQueryCoreTables() {},
+    getBigQueryConfig: function getBigQueryConfig() {},
+    bqComputeTableName: function bqComputeTableName() {},
+    bqExtractAliasPart: function bqExtractAliasPart() {},
+    bqRunDeduplicationForForm: function bqRunDeduplicationForForm() {},
+    bqParentTableId: function bqParentTableId() {},
+    bqBackfillForm: function bqBackfillForm() {},
+    gestionFeuilles: function gestionFeuilles() {},
+    isNumeric: function isNumeric() {},
+    fetchUnreadResponses: function fetchUnreadResponses() {},
+    ingestResponsesBatch: function ingestResponsesBatch() {},
+    finalizeIngestionRun: function finalizeIngestionRun() {}
+  };
+
+  const objectExports = {
+    DriveMediaService: { getDefault: () => ({}) },
+    ExternalListsService: { updateFromSnapshot: () => {} },
+    SheetInterfaceHelpers: { applyConfigLayout: () => {} },
+    SheetConfigHelpers: { create: () => {}, readStoredConfig: () => ({}) },
+    SheetDriveExports: { exportMedias: () => {} },
+    FormResponseSnapshot: { buildRowSnapshot: () => {} }
+  };
+
+  return createContext(Object.assign({}, functionStubs, objectExports, overrides));
+}
+
 function testFormResponseSnapshotUsesDriveService() {
   const driveService = {
     calls: [],
@@ -245,45 +287,7 @@ function testCollectMediasForRecordUsesSnapshotService() {
 }
 
 function testLibPublicSymbolsExports() {
-  const functionStubs = {
-    handleException: function handleException() {},
-    requeteAPIDonnees: function requeteAPIDonnees() {},
-    processData: function processData() {},
-    handleResponses: function handleResponses() {},
-    markResponsesAsRead: function markResponsesAsRead() {},
-    createIngestionServices: function createIngestionServices() {},
-    buildExecutionTargets: function buildExecutionTargets() {},
-    resolveBatchLimit: function resolveBatchLimit() {},
-    resolveIsoTimestamp: function resolveIsoTimestamp() {},
-    resolveUnreadDataset: function resolveUnreadDataset() {},
-    collectResponseArtifacts: function collectResponseArtifacts() {},
-    ingestBigQueryPayloads: function ingestBigQueryPayloads() {},
-    runExternalListsSync: function runExternalListsSync() {},
-    initBigQueryConfig: function initBigQueryConfig() {},
-    ensureBigQueryCoreTables: function ensureBigQueryCoreTables() {},
-    getBigQueryConfig: function getBigQueryConfig() {},
-    bqComputeTableName: function bqComputeTableName() {},
-    bqExtractAliasPart: function bqExtractAliasPart() {},
-    bqRunDeduplicationForForm: function bqRunDeduplicationForForm() {},
-    bqParentTableId: function bqParentTableId() {},
-    bqBackfillForm: function bqBackfillForm() {},
-    gestionFeuilles: function gestionFeuilles() {},
-    isNumeric: function isNumeric() {},
-    fetchUnreadResponses: function fetchUnreadResponses() {},
-    ingestResponsesBatch: function ingestResponsesBatch() {},
-    finalizeIngestionRun: function finalizeIngestionRun() {}
-  };
-
-  const objectExports = {
-    DriveMediaService: { getDefault: () => ({}) },
-    ExternalListsService: { updateFromSnapshot: () => {} },
-    SheetInterfaceHelpers: { applyConfigLayout: () => {} },
-    SheetConfigHelpers: { create: () => {} },
-    SheetDriveExports: { exportMedias: () => {} },
-    FormResponseSnapshot: { buildRowSnapshot: () => {} }
-  };
-
-  const context = createContext(Object.assign({}, functionStubs, objectExports));
+  const context = buildPublicApiContext();
 
   runFile('lib/0_Data.js', context);
 
@@ -351,6 +355,46 @@ function testLibPublicSymbolsExports() {
   assert.strictEqual(unexpected.length, 0, 'aucun symbole inattendu ne doit être exposé');
 }
 
+function testGetLibPublicApiFreezesExports() {
+  const context = buildPublicApiContext();
+
+  runFile('lib/0_Data.js', context);
+  runFile('lib/zz_PublicApi.js', context);
+
+  assert.strictEqual(
+    typeof context.getLibPublicApi,
+    'function',
+    'getLibPublicApi doit être exposée par la librairie'
+  );
+
+  const api = context.getLibPublicApi();
+  assert.ok(api, 'getLibPublicApi doit retourner un objet');
+  assert.ok(Object.isFrozen(api), 'l’API publique doit être figée');
+
+  const symbols = context.getLibPublicSymbols();
+  const apiKeys = Object.keys(api).sort();
+  const sortedSymbols = symbols.slice().sort();
+  const missing = sortedSymbols.filter((symbol) => apiKeys.indexOf(symbol) === -1);
+  const extra = apiKeys.filter((key) => sortedSymbols.indexOf(key) === -1);
+  assert.strictEqual(
+    missing.length,
+    0,
+    'tous les symboles documentés doivent être présents dans l’API publique figée'
+  );
+  assert.strictEqual(
+    extra.length,
+    0,
+    'l’API publique ne doit exposer aucun symbole non déclaré dans LIB_PUBLIC_SYMBOLS'
+  );
+
+  const repeatCall = context.getLibPublicApi();
+  assert.strictEqual(repeatCall, api, 'getLibPublicApi doit retourner la même instance figée');
+
+  symbols.forEach((symbol) => {
+    assert.strictEqual(api[symbol], context[symbol], `l’API doit exposer la référence globale ${symbol}`);
+  });
+}
+
 function testRunExternalListsSyncWithoutService() {
   const logs = [];
   const context = createContext({
@@ -389,7 +433,9 @@ function testProcessDataBuildsSummary() {
     resolveBatchLimit: (value) => Number(value),
     buildExecutionTargets: (existingConfig, overrideTargets) =>
       Object.assign({ bigQuery: true, externalLists: true }, overrideTargets || {}),
-    getFormConfig: () => ({ last_data_id: null }),
+    SheetConfigHelpers: {
+      readStoredConfig: () => ({ last_data_id: null })
+    },
     createIngestionServices: () => ({
       fetch: () => {},
       now: () => '2024-02-01T00:00:00.000Z',
@@ -470,7 +516,9 @@ function testProcessDataWithBigQueryDisabled() {
     resolveBatchLimit: (value) => Number(value),
     buildExecutionTargets: (existingConfig, overrideTargets) =>
       Object.assign({ bigQuery: true, externalLists: true }, overrideTargets || {}),
-    getFormConfig: () => ({ last_data_id: null }),
+    SheetConfigHelpers: {
+      readStoredConfig: () => ({ last_data_id: null })
+    },
     createIngestionServices: () => ({
       fetch: () => {},
       now: () => '2024-03-01T00:00:00.000Z',
@@ -940,6 +988,7 @@ const tests = [
   { name: 'collectResponseArtifacts fonctionne sans legacy Sheets', fn: testCollectResponseArtifactsWithoutLegacySheetSync },
   { name: 'collectMediasForRecord exploite le snapshot', fn: testCollectMediasForRecordUsesSnapshotService },
   { name: 'getLibPublicSymbols documente les exports globaux', fn: testLibPublicSymbolsExports },
+  { name: 'getLibPublicApi fige l’API exposée', fn: testGetLibPublicApiFreezesExports },
   { name: 'runExternalListsSync ignore l’absence de service', fn: testRunExternalListsSyncWithoutService },
   { name: 'processData construit un résumé cohérent', fn: testProcessDataBuildsSummary },
   { name: 'processData respecte les cibles d’exécution désactivées', fn: testProcessDataWithBigQueryDisabled },
