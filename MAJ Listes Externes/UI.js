@@ -1,33 +1,33 @@
-var requireLibKizeoSymbol =
-  typeof requireLibKizeoSymbol === 'function'
-    ? requireLibKizeoSymbol
+var resolveMajUiSymbol =
+  typeof requireMajSymbol === 'function'
+    ? requireMajSymbol
     : function (symbolName) {
+        if (typeof majBootstrap !== 'undefined' && majBootstrap) {
+          if (typeof majBootstrap.require === 'function') {
+            return majBootstrap.require(symbolName);
+          }
+          if (typeof majBootstrap.requireMany === 'function') {
+            var resolved = majBootstrap.requireMany([symbolName]);
+            if (resolved && Object.prototype.hasOwnProperty.call(resolved, symbolName)) {
+              return resolved[symbolName];
+            }
+          }
+        }
         if (typeof libKizeo === 'undefined' || libKizeo === null) {
           throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
         }
-        const value = libKizeo[symbolName];
+        var value = libKizeo[symbolName];
         if (value === undefined || value === null) {
           throw new Error('libKizeo.' + symbolName + ' indisponible');
         }
         return value;
       };
 
-var reportException =
-  typeof reportException === 'function' ? reportException : requireLibKizeoSymbol('handleException');
-var fetchKizeo =
-  typeof fetchKizeo === 'function' ? fetchKizeo : requireLibKizeoSymbol('requeteAPIDonnees');
-var computeTableName =
-  typeof computeTableName === 'function'
-    ? computeTableName
-    : requireLibKizeoSymbol('bqComputeTableName');
-var gestionFeuilles =
-  typeof gestionFeuilles === 'function'
-    ? gestionFeuilles
-    : requireLibKizeoSymbol('gestionFeuilles');
-var ensureBigQueryCoreTables =
-  typeof ensureBigQueryCoreTables === 'function'
-    ? ensureBigQueryCoreTables
-    : requireLibKizeoSymbol('ensureBigQueryCoreTables');
+var reportException = resolveMajUiSymbol('handleException');
+var fetchKizeo = resolveMajUiSymbol('requeteAPIDonnees');
+var computeTableName = resolveMajUiSymbol('bqComputeTableName');
+var gestionFeuilles = resolveMajUiSymbol('gestionFeuilles');
+var ensureBigQueryCoreTables = resolveMajUiSymbol('ensureBigQueryCoreTables');
 
 /**
  * Crée un menu personnalisé dans la feuille de calcul active et ajoute des éléments avec des actions correspondantes.

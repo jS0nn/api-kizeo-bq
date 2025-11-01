@@ -2,7 +2,7 @@
 
 ## 1. Contexte & constats
 - Le projet dépendait d’un alias global `libKizeo` (hérité de l’ancienne bibliothèque) pour accéder aux fonctions de `lib/`.  
-  Les appels passent désormais par un helper commun (`requireLibKizeoSymbol`) et l’agrégateur `libKizeo` a été supprimé de `0_Data.js`, ce qui simplifie la navigation et réduit les couches intermédiaires.
+  Les appels passent désormais par des bootstraps communs (`sheetBootstrap`, `majBootstrap`) qui valident la présence des symboles et mettent en cache les accès à la librairie, ce qui supprime les wrappers individuels et réduit les couches intermédiaires.
 - `lib/ProcessManager.js` concentre toutes les responsabilités (lecture Kizeo, staging, BigQuery, listes externes, marquage) dans une IIFE de plus de 700 lignes.  
   Résultat : faible lisibilité, dépendances implicites (`global.*`) et faible testabilité.
 - Les modules clefs (`FormResponseSnapshot`, `KizeoClient`, `ExternalListsService`, `DriveMediaService`) exposent désormais directement leurs fonctions globales.
@@ -32,6 +32,7 @@
   - ✅ Mutualiser les exports Drive (PDF/médias) via `lib/SheetDriveExports.js` pour supprimer la duplication entre `sheetInterface` et `MAJ Listes Externes`.
   - Réorganiser `Code.js` : séparer triggers, orchestration (`main`, `majSheet`), exports Drive, utilitaires.  
     Garder `Code.js` comme point d’entrée déclarant les fonctions appelées par les triggers.
+  - ✅ Les dossiers `sheetInterface/` et `MAJ Listes Externes/` exposent désormais uniquement des wrappers dans `Code.js`, la logique étant répartie dans `config.js`, `triggers.js`, `exports.js` et `pipeline.js`.
   - Adapter `UI.js` à la nouvelle API (gestion des erreurs directe, chargement des formulaires via `requeteAPIDonnees`).
 
 ## 4. Plan d’action détaillé
@@ -49,11 +50,11 @@
    - Lancer un lint ou analyse statique (si disponible) pour détecter les références obsolètes à `libKizeo`.
 
 ### Phase B — Mise à jour des scripts liés
-5. Remplacer dans `sheetInterface/*` toutes les occurrences de `libKizeo.*` par les fonctions natives. *(fait)*  
+5. Remplacer dans `sheetInterface/*` toutes les occurrences de `libKizeo.*` par les fonctions natives via le bootstrap commun. *(fait)*  
    Ajuster les imports implicites (Apps Script charge tous les fichiers du projet : s’assurer que les fonctions sont déclarées au niveau global).
 6. Réorganiser `sheetInterface/Code.js` en modules dédiés (`triggers.js`, `pipeline.js`, `config.js`, `exports.js`).  
    `Code.js` ne doit plus dépasser quelques centaines de lignes et se contenter de déclarer les points d’entrée utilisés par les triggers/UI.
-7. Répliquer la même approche dans `MAJ Listes Externes/*` : appels directs, modules légers, suppression de l’alias. *(fait)*
+7. Répliquer la même approche dans `MAJ Listes Externes/*` : appels directs, modules légers, bootstrap partagé (`majBootstrap`) au lieu de wrappers. *(fait)*
 8. **Tests associés**  
    - Ajouter un scénario UI manuel (`ZZ_tests.js`) simulant la sélection de formulaire, la configuration et le déclenchement de `main`.  
    - Tester `main` et `majSheet` via `clasp run` après chaque refactor pour vérifier l’ingestion réelle et la mise à jour de la feuille `Config`.  

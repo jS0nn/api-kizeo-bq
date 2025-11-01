@@ -47,6 +47,8 @@
 - [x] Adapter `lib/FormResponseSnapshot.js`, `lib/KizeoClient.js`, `lib/ExternalListsService.js`, `lib/BigQueryBindings.js` afin d’éliminer les ré-exports inutiles.
 - **Étape 2 — Scripts liés**
 - [x] Mettre à jour `sheetInterface/*` pour appeler directement les fonctions natives (configuration, triggers, pipeline, UI). *(Découpage modulaire avancé encore à affiner.)*
+- [x] Extraire la logique de `Code.js` vers des modules dédiés (`config.js`, `triggers.js`, `exports.js`, `pipeline.js`) et conserver uniquement des wrappers globaux.
+- [x] Centraliser la résolution des symboles de librairie via des bootstraps communs (`sheetBootstrap`, `majBootstrap`) pour supprimer les wrappers locaux.
 - [x] Ajouter/mettre à jour `sheetInterface/ZZ_tests.js` pour couvrir les principaux flux (sélection formulaire, `main`, `majSheet`). *(scénario ajouté, exécution manuelle à réaliser)*
 - [x] Mettre à jour `MAJ Listes Externes/*` dans le même esprit (appels directs, modules légers, suppression de `libKizeo`).
 - [x] Exécuter un scénario complet de synchronisation des listes externes (nouvelle fonction `zzDescribeScenario()`) et archiver le résultat. *(Scénario `zzDescribeScenarioSyncExternalLists` ajouté ; log consigné après exécution)*

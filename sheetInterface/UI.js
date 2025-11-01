@@ -1,37 +1,34 @@
-var requireLibKizeoSymbol =
-  typeof requireLibKizeoSymbol === 'function'
-    ? requireLibKizeoSymbol
+var resolveSheetUiSymbol =
+  typeof requireSheetSymbol === 'function'
+    ? requireSheetSymbol
     : function (symbolName) {
+        if (typeof sheetBootstrap !== 'undefined' && sheetBootstrap) {
+          if (typeof sheetBootstrap.require === 'function') {
+            return sheetBootstrap.require(symbolName);
+          }
+          if (typeof sheetBootstrap.requireMany === 'function') {
+            var resolved = sheetBootstrap.requireMany([symbolName]);
+            if (resolved && Object.prototype.hasOwnProperty.call(resolved, symbolName)) {
+              return resolved[symbolName];
+            }
+          }
+        }
         if (typeof libKizeo === 'undefined' || libKizeo === null) {
           throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
         }
-        const value = libKizeo[symbolName];
+        var value = libKizeo[symbolName];
         if (value === undefined || value === null) {
           throw new Error('libKizeo.' + symbolName + ' indisponible');
         }
         return value;
       };
 
-var reportException =
-  typeof reportException === 'function' ? reportException : requireLibKizeoSymbol('handleException');
-var fetchKizeo =
-  typeof fetchKizeo === 'function' ? fetchKizeo : requireLibKizeoSymbol('requeteAPIDonnees');
-var computeTableName =
-  typeof computeTableName === 'function'
-    ? computeTableName
-    : requireLibKizeoSymbol('bqComputeTableName');
-var sheetInterfaceHelpers =
-  typeof sheetInterfaceHelpers !== 'undefined'
-    ? sheetInterfaceHelpers
-    : requireLibKizeoSymbol('SheetInterfaceHelpers');
-var gestionFeuilles =
-  typeof gestionFeuilles === 'function'
-    ? gestionFeuilles
-    : requireLibKizeoSymbol('gestionFeuilles');
-var ensureBigQueryCoreTables =
-  typeof ensureBigQueryCoreTables === 'function'
-    ? ensureBigQueryCoreTables
-    : requireLibKizeoSymbol('ensureBigQueryCoreTables');
+var reportException = resolveSheetUiSymbol('handleException');
+var fetchKizeo = resolveSheetUiSymbol('requeteAPIDonnees');
+var computeTableName = resolveSheetUiSymbol('bqComputeTableName');
+var sheetInterfaceHelpers = resolveSheetUiSymbol('SheetInterfaceHelpers');
+var gestionFeuilles = resolveSheetUiSymbol('gestionFeuilles');
+var ensureBigQueryCoreTables = resolveSheetUiSymbol('ensureBigQueryCoreTables');
 
 /**
  * Crée un menu personnalisé dans la feuille de calcul active et ajoute des éléments avec des actions correspondantes.

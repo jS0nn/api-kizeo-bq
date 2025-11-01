@@ -1,19 +1,29 @@
-var requireLibKizeoSymbol =
-  typeof requireLibKizeoSymbol === 'function'
-    ? requireLibKizeoSymbol
+var majOutilsResolveSymbol =
+  typeof requireMajSymbol === 'function'
+    ? requireMajSymbol
     : function (symbolName) {
+        if (typeof majBootstrap !== 'undefined' && majBootstrap) {
+          if (typeof majBootstrap.require === 'function') {
+            return majBootstrap.require(symbolName);
+          }
+          if (typeof majBootstrap.requireMany === 'function') {
+            var resolved = majBootstrap.requireMany([symbolName]);
+            if (resolved && Object.prototype.hasOwnProperty.call(resolved, symbolName)) {
+              return resolved[symbolName];
+            }
+          }
+        }
         if (typeof libKizeo === 'undefined' || libKizeo === null) {
           throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
         }
-        const value = libKizeo[symbolName];
+        var value = libKizeo[symbolName];
         if (value === undefined || value === null) {
           throw new Error('libKizeo.' + symbolName + ' indisponible');
         }
         return value;
       };
 
-var reportException =
-  typeof reportException === 'function' ? reportException : requireLibKizeoSymbol('handleException');
+var reportException = majOutilsResolveSymbol('handleException');
 
 const MAIN_TRIGGER_FUNCTION = 'main';
 const DEDUP_TRIGGER_FUNCTION = 'runBigQueryDeduplication';
