@@ -1,125 +1,170 @@
-//Version 4.6.0
+//Version 4.7.1
+
+var majAppBindingsInstance = null;
+
+function majAppGetGlobal() {
+  if (typeof globalThis !== 'undefined') return globalThis;
+  if (typeof self !== 'undefined') return self;
+  if (typeof window !== 'undefined') return window;
+  return Function('return this')();
+}
+
+function majAppResolveGlobal(name) {
+  var globalObject = majAppGetGlobal();
+  var module = globalObject[name];
+  if (!module) {
+    throw new Error('MAJ Listes Externes/Code -> module ' + name + ' indisponible');
+  }
+  return module;
+}
+
+function majAppResolveBindings() {
+  if (majAppBindingsInstance) {
+    return majAppBindingsInstance;
+  }
+
+  if (typeof libKizeo === 'undefined' || libKizeo === null) {
+    throw new Error('libKizeo indisponible (MAJ Listes Externes/Code)');
+  }
+
+  var bindingsFactory =
+    libKizeo.SheetAppBindings && typeof libKizeo.SheetAppBindings.create === 'function'
+      ? libKizeo.SheetAppBindings.create
+      : null;
+  if (!bindingsFactory) {
+    throw new Error('SheetAppBindings indisponible via libKizeo');
+  }
+
+  majAppBindingsInstance = bindingsFactory({
+    config: majAppResolveGlobal('majConfig'),
+    triggers: majAppResolveGlobal('majTriggers'),
+    pipeline: majAppResolveGlobal('majPipeline'),
+    exports: majAppResolveGlobal('majExports')
+  });
+
+  return majAppBindingsInstance;
+}
 
 function sanitizeBatchLimitValue(raw) {
-  return majConfig.sanitizeBatchLimitValue(raw);
+  return majAppResolveBindings().sanitizeBatchLimitValue(raw);
 }
 
 function getConfiguredBatchLimit(config) {
-  return majConfig.getConfiguredBatchLimit(config);
+  return majAppResolveBindings().getConfiguredBatchLimit(config);
 }
 
 function sanitizeBooleanConfigFlag(raw, defaultValue) {
-  return majConfig.sanitizeBooleanConfigFlag(raw, defaultValue);
+  return majAppResolveBindings().sanitizeBooleanConfigFlag(raw, defaultValue);
 }
 
 function sanitizeTriggerFrequency(raw) {
-  return majTriggers.sanitizeTriggerFrequency(raw);
+  return majAppResolveBindings().sanitizeTriggerFrequency(raw);
 }
 
 function getTriggerOption(key) {
-  return majTriggers.getTriggerOption(key);
+  return majAppResolveBindings().getTriggerOption(key);
 }
 
 function describeTriggerOption(key) {
-  return majTriggers.describeTriggerOption(key);
+  return majAppResolveBindings().describeTriggerOption(key);
 }
 
 function configureTriggerFromKey(key) {
-  return majTriggers.configureTriggerFromKey(key);
+  return majAppResolveBindings().configureTriggerFromKey(key);
 }
 
 function parseCustomDailyHour(key) {
-  return majTriggers.parseCustomDailyHour(key);
+  return majAppResolveBindings().parseCustomDailyHour(key);
 }
 
 function formatHourLabel(hour) {
-  return majTriggers.formatHourLabel(hour);
+  return majAppResolveBindings().formatHourLabel(hour);
 }
 
 function parseCustomWeekly(key) {
-  return majTriggers.parseCustomWeekly(key);
+  return majAppResolveBindings().parseCustomWeekly(key);
 }
 
 function formatWeekdayLabel(dayCode) {
-  return majTriggers.formatWeekdayLabel(dayCode);
+  return majAppResolveBindings().formatWeekdayLabel(dayCode);
 }
 
 function getStoredTriggerFrequency() {
-  return majTriggers.getStoredTriggerFrequency();
+  return majAppResolveBindings().getStoredTriggerFrequency();
 }
 
 function setStoredTriggerFrequency(key) {
-  return majTriggers.setStoredTriggerFrequency(key);
+  return majAppResolveBindings().setStoredTriggerFrequency(key);
 }
 
 function persistTriggerFrequencyToSheet(frequencyKey) {
-  return majTriggers.persistTriggerFrequencyToSheet(frequencyKey);
+  return majAppResolveBindings().persistTriggerFrequencyToSheet(frequencyKey);
 }
 
 function onOpen() {
-  return majPipeline.onOpen();
+  return majAppResolveBindings().onOpen();
 }
 
 function setScriptProperties(etat) {
-  return majPipeline.setScriptProperties(etat);
+  return majAppResolveBindings().setScriptProperties(etat);
 }
 
 function getEtatExecution() {
-  return majPipeline.getEtatExecution();
+  return majAppResolveBindings().getEtatExecution();
 }
 
 function initBigQueryConfigFromSheet() {
-  return majPipeline.initBigQueryConfigFromSheet();
+  return majAppResolveBindings().initBigQueryConfigFromSheet();
 }
 
 function getOrCreateSubFolder(parentFolderId, subFolderName) {
-  return majExports.getOrCreateSubFolder(parentFolderId, subFolderName);
+  return majAppResolveBindings().getOrCreateSubFolder(parentFolderId, subFolderName);
 }
 
 function buildMediaDisplayName(media) {
-  return majExports.buildMediaDisplayName(media);
+  return majAppResolveBindings().buildMediaDisplayName(media);
 }
 
 function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
-  majExports.exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId);
+  return majAppResolveBindings().exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId);
 }
 
 function exportMedias(mediaList, targetFolderId) {
-  majExports.exportMedias(mediaList, targetFolderId);
+  return majAppResolveBindings().exportMedias(mediaList, targetFolderId);
 }
 
 function readFormConfigFromSheet(sheet) {
-  return majConfig.readFormConfigFromSheet(sheet);
+  return majAppResolveBindings().readFormConfigFromSheet(sheet);
 }
 
 function writeFormConfigToSheet(sheet, config) {
-  majConfig.writeFormConfigToSheet(sheet, config);
+  return majAppResolveBindings().writeFormConfigToSheet(sheet, config);
 }
 
 function resolveFormulaireContext(spreadsheetBdD) {
-  return majConfig.resolveFormulaireContext(spreadsheetBdD);
+  return majAppResolveBindings().resolveFormulaireContext(spreadsheetBdD);
 }
 
 function createActionCode() {
-  return majConfig.createActionCode();
+  return majAppResolveBindings().createActionCode();
 }
 
 function validateFormConfig(rawConfig, sheet) {
-  return majConfig.validateFormConfig(rawConfig, sheet);
+  return majAppResolveBindings().validateFormConfig(rawConfig, sheet);
 }
 
 function notifyConfigErrors(validation) {
-  majConfig.notifyConfigErrors(validation);
+  return majAppResolveBindings().notifyConfigErrors(validation);
 }
 
 function main(options) {
-  return majPipeline.main(options);
+  return majAppResolveBindings().main(options);
 }
 
 function runBigQueryDeduplication() {
-  return majPipeline.runBigQueryDeduplication();
+  return majAppResolveBindings().runBigQueryDeduplication();
 }
 
 function launchManualDeduplication() {
-  return majPipeline.launchManualDeduplication();
+  return majAppResolveBindings().launchManualDeduplication();
 }

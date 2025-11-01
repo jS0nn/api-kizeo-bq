@@ -17,6 +17,11 @@ if (typeof computeTableName !== 'function') {
   throw new Error('bqComputeTableName indisponible via libKizeo');
 }
 
+var sheetInterfaceHelpers = libKizeo.SheetInterfaceHelpers || null;
+if (!sheetInterfaceHelpers) {
+  throw new Error('SheetInterfaceHelpers indisponible via libKizeo');
+}
+
 var gestionFeuilles = libKizeo.gestionFeuilles;
 if (typeof gestionFeuilles !== 'function') {
   throw new Error('gestionFeuilles indisponible via libKizeo');
@@ -165,6 +170,17 @@ function enregistrementUI(formulaire) {
     }
 
     const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
+    if (getEtatExecution() === 'enCours') {
+      console.log('enregistrementUI: exécution précédente détectée avant configuration.');
+      if (sheetInterfaceHelpers) {
+        sheetInterfaceHelpers.notifyExecutionAlreadyRunning({
+          shouldThrow: true,
+          errorMessage: 'EXECUTION_EN_COURS',
+          showToast: false,
+          showAlert: false
+        });
+      }
+    }
     setScriptProperties('enCours');
     try {
       const targetSheet = gestionFeuilles(spreadsheetBdD, formulaireData);
@@ -204,7 +220,17 @@ function enregistrementUI(formulaire) {
           tableName
         });
       }
-      main();
+      main({ origin: 'ui_dialog' });
+      try {
+        const toastMessage =
+          "Formulaire configuré. Utilisez 'Actualiser BigQuery' pour récupérer les nouvelles données.";
+        const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+        if (spreadsheet) {
+          spreadsheet.toast(toastMessage, 'Configuration terminée', 8);
+        }
+      } catch (toastError) {
+        console.log(`enregistrementUI: toast KO -> ${toastError}`);
+      }
     } finally {
       setScriptProperties('termine');
     }
@@ -219,7 +245,19 @@ function enregistrementUI(formulaire) {
  * 
  */
 function majSheet() {
-  main();
+  if (getEtatExecution() === 'enCours') {
+    console.log('majSheet: exécution précédente détectée.');
+    if (sheetInterfaceHelpers) {
+      sheetInterfaceHelpers.notifyExecutionAlreadyRunning({
+        toastMessage:
+          "Une mise à jour est déjà en cours. Relancez depuis le menu seulement lorsqu'elle sera terminée.",
+        alertMessage:
+          "Une mise à jour est déjà en cours. Patientez avant de relancer depuis le menu."
+      });
+    }
+    return;
+  }
+  main({ origin: 'menu' });
 }
 
 /**

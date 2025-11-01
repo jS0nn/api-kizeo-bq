@@ -1,125 +1,170 @@
-//Version 4.8.0
+//Version 4.9.1
+
+var sheetAppBindingsInstance = null;
+
+function sheetAppGetGlobal() {
+  if (typeof globalThis !== 'undefined') return globalThis;
+  if (typeof self !== 'undefined') return self;
+  if (typeof window !== 'undefined') return window;
+  return Function('return this')();
+}
+
+function sheetAppResolveGlobal(name) {
+  var globalObject = sheetAppGetGlobal();
+  var module = globalObject[name];
+  if (!module) {
+    throw new Error('sheetInterface/Code -> module ' + name + ' indisponible');
+  }
+  return module;
+}
+
+function sheetAppResolveBindings() {
+  if (sheetAppBindingsInstance) {
+    return sheetAppBindingsInstance;
+  }
+
+  if (typeof libKizeo === 'undefined' || libKizeo === null) {
+    throw new Error('libKizeo indisponible (sheetInterface/Code)');
+  }
+
+  var bindingsFactory =
+    libKizeo.SheetAppBindings && typeof libKizeo.SheetAppBindings.create === 'function'
+      ? libKizeo.SheetAppBindings.create
+      : null;
+  if (!bindingsFactory) {
+    throw new Error('SheetAppBindings indisponible via libKizeo');
+  }
+
+  sheetAppBindingsInstance = bindingsFactory({
+    config: sheetAppResolveGlobal('sheetConfig'),
+    triggers: sheetAppResolveGlobal('sheetTriggers'),
+    pipeline: sheetAppResolveGlobal('sheetPipeline'),
+    exports: sheetAppResolveGlobal('sheetExports')
+  });
+
+  return sheetAppBindingsInstance;
+}
 
 function sanitizeBatchLimitValue(raw) {
-  return sheetConfig.sanitizeBatchLimitValue(raw);
+  return sheetAppResolveBindings().sanitizeBatchLimitValue(raw);
 }
 
 function getConfiguredBatchLimit(config) {
-  return sheetConfig.getConfiguredBatchLimit(config);
+  return sheetAppResolveBindings().getConfiguredBatchLimit(config);
 }
 
 function sanitizeBooleanConfigFlag(raw, defaultValue) {
-  return sheetConfig.sanitizeBooleanConfigFlag(raw, defaultValue);
+  return sheetAppResolveBindings().sanitizeBooleanConfigFlag(raw, defaultValue);
 }
 
 function sanitizeTriggerFrequency(raw) {
-  return sheetTriggers.sanitizeTriggerFrequency(raw);
+  return sheetAppResolveBindings().sanitizeTriggerFrequency(raw);
 }
 
 function getTriggerOption(key) {
-  return sheetTriggers.getTriggerOption(key);
+  return sheetAppResolveBindings().getTriggerOption(key);
 }
 
 function describeTriggerOption(key) {
-  return sheetTriggers.describeTriggerOption(key);
+  return sheetAppResolveBindings().describeTriggerOption(key);
 }
 
 function configureTriggerFromKey(key) {
-  return sheetTriggers.configureTriggerFromKey(key);
+  return sheetAppResolveBindings().configureTriggerFromKey(key);
 }
 
 function parseCustomDailyHour(key) {
-  return sheetTriggers.parseCustomDailyHour(key);
+  return sheetAppResolveBindings().parseCustomDailyHour(key);
 }
 
 function formatHourLabel(hour) {
-  return sheetTriggers.formatHourLabel(hour);
+  return sheetAppResolveBindings().formatHourLabel(hour);
 }
 
 function parseCustomWeekly(key) {
-  return sheetTriggers.parseCustomWeekly(key);
+  return sheetAppResolveBindings().parseCustomWeekly(key);
 }
 
 function formatWeekdayLabel(dayCode) {
-  return sheetTriggers.formatWeekdayLabel(dayCode);
+  return sheetAppResolveBindings().formatWeekdayLabel(dayCode);
 }
 
 function getStoredTriggerFrequency() {
-  return sheetTriggers.getStoredTriggerFrequency();
+  return sheetAppResolveBindings().getStoredTriggerFrequency();
 }
 
 function setStoredTriggerFrequency(key) {
-  return sheetTriggers.setStoredTriggerFrequency(key);
+  return sheetAppResolveBindings().setStoredTriggerFrequency(key);
 }
 
 function persistTriggerFrequencyToSheet(frequencyKey) {
-  return sheetTriggers.persistTriggerFrequencyToSheet(frequencyKey);
+  return sheetAppResolveBindings().persistTriggerFrequencyToSheet(frequencyKey);
 }
 
 function onOpen() {
-  return sheetPipeline.onOpen();
+  return sheetAppResolveBindings().onOpen();
 }
 
 function setScriptProperties(etat) {
-  return sheetPipeline.setScriptProperties(etat);
+  return sheetAppResolveBindings().setScriptProperties(etat);
 }
 
 function getEtatExecution() {
-  return sheetPipeline.getEtatExecution();
+  return sheetAppResolveBindings().getEtatExecution();
 }
 
 function initBigQueryConfigFromSheet() {
-  return sheetPipeline.initBigQueryConfigFromSheet();
+  return sheetAppResolveBindings().initBigQueryConfigFromSheet();
 }
 
 function getOrCreateSubFolder(parentFolderId, subFolderName) {
-  return sheetExports.getOrCreateSubFolder(parentFolderId, subFolderName);
+  return sheetAppResolveBindings().getOrCreateSubFolder(parentFolderId, subFolderName);
 }
 
 function buildMediaDisplayName(media) {
-  return sheetExports.buildMediaDisplayName(media);
+  return sheetAppResolveBindings().buildMediaDisplayName(media);
 }
 
 function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
-  sheetExports.exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId);
+  return sheetAppResolveBindings().exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId);
 }
 
 function exportMedias(mediaList, targetFolderId) {
-  sheetExports.exportMedias(mediaList, targetFolderId);
+  return sheetAppResolveBindings().exportMedias(mediaList, targetFolderId);
 }
 
 function readFormConfigFromSheet(sheet) {
-  return sheetConfig.readFormConfigFromSheet(sheet);
+  return sheetAppResolveBindings().readFormConfigFromSheet(sheet);
 }
 
 function writeFormConfigToSheet(sheet, config) {
-  sheetConfig.writeFormConfigToSheet(sheet, config);
+  return sheetAppResolveBindings().writeFormConfigToSheet(sheet, config);
 }
 
 function resolveFormulaireContext(spreadsheetBdD) {
-  return sheetConfig.resolveFormulaireContext(spreadsheetBdD);
+  return sheetAppResolveBindings().resolveFormulaireContext(spreadsheetBdD);
 }
 
 function createActionCode() {
-  return sheetConfig.createActionCode();
+  return sheetAppResolveBindings().createActionCode();
 }
 
 function validateFormConfig(rawConfig, sheet) {
-  return sheetConfig.validateFormConfig(rawConfig, sheet);
+  return sheetAppResolveBindings().validateFormConfig(rawConfig, sheet);
 }
 
 function notifyConfigErrors(validation) {
-  sheetConfig.notifyConfigErrors(validation);
+  return sheetAppResolveBindings().notifyConfigErrors(validation);
 }
 
 function main(options) {
-  return sheetPipeline.main(options);
+  return sheetAppResolveBindings().main(options);
 }
 
 function runBigQueryDeduplication() {
-  return sheetPipeline.runBigQueryDeduplication();
+  return sheetAppResolveBindings().runBigQueryDeduplication();
 }
 
 function launchManualDeduplication() {
-  return sheetPipeline.launchManualDeduplication();
+  return sheetAppResolveBindings().launchManualDeduplication();
 }

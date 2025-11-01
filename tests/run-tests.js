@@ -42,6 +42,14 @@ function runFile(relativePath, context) {
   vm.runInContext(code, context, { filename: relativePath });
 }
 
+function loadProcessManagerModules(context) {
+  runFile('lib/process/manager/logging.js', context);
+  runFile('lib/process/manager/preparation.js', context);
+  runFile('lib/process/manager/ingestion.js', context);
+  runFile('lib/process/manager/finalize.js', context);
+  runFile('lib/ProcessManager.js', context);
+}
+
 function buildPublicApiContext(overrides = {}) {
   const functionStubs = {
     handleException: function handleException() {},
@@ -77,6 +85,7 @@ function buildPublicApiContext(overrides = {}) {
     ExternalListsService: { updateFromSnapshot: () => {} },
     SheetInterfaceHelpers: { applyConfigLayout: () => {} },
     SheetConfigHelpers: { create: () => {}, readStoredConfig: () => ({}) },
+    SheetAppBindings: { create: () => ({}) },
     SheetDriveExports: { exportMedias: () => {} },
     FormResponseSnapshot: { buildRowSnapshot: () => {} }
   };
@@ -334,6 +343,7 @@ function testLibPublicSymbolsExports() {
     'ExternalListsService',
     'SheetInterfaceHelpers',
     'SheetConfigHelpers',
+    'SheetAppBindings',
     'SheetDriveExports',
     'FormResponseSnapshot',
     'gestionFeuilles',
@@ -479,7 +489,7 @@ function testProcessDataBuildsSummary() {
     processGetLogPrefix: () => 'lib:Data'
   });
 
-  runFile('lib/ProcessManager.js', context);
+  loadProcessManagerModules(context);
 
   const originalMark = context.markResponsesAsRead;
   context.markResponsesAsRead = function () {
@@ -565,7 +575,7 @@ function testProcessDataWithBigQueryDisabled() {
     processGetLogPrefix: () => 'lib:Data'
   });
 
-  runFile('lib/ProcessManager.js', context);
+  loadProcessManagerModules(context);
 
   const originalMark = context.markResponsesAsRead;
   context.markResponsesAsRead = function () {
@@ -855,7 +865,7 @@ function testFetchUnreadResponsesStates() {
     }
   });
 
-  runFile('lib/ProcessManager.js', context);
+  loadProcessManagerModules(context);
 
   const resultNoData = context.fetchUnreadResponses(() => {}, { id: 'FORM' }, '/api', true, null, () => {});
   assert.strictEqual(resultNoData.state, 'NO_DATA', 'NO_UNREAD doit être converti en NO_DATA');
@@ -890,7 +900,7 @@ function testIngestResponsesBatchSkipsBigQuery() {
     processGetLogPrefix: () => 'lib:Data'
   });
 
-  runFile('lib/ProcessManager.js', context);
+  loadProcessManagerModules(context);
 
   const services = { fetch: () => {} };
   const result = context.ingestResponsesBatch(
@@ -908,12 +918,262 @@ function testIngestResponsesBatchSkipsBigQuery() {
   assert.strictEqual(ingestionCalls.length, 0, 'L ingestion ne doit pas être déclenchée quand bigQuery=false');
 }
 
+function testHandleResponsesPropagatesSnapshot() {
+  const snapshot = { foo: 'bar' };
+  const finalizeSnapshots = [];
+  const services = { fetch: () => {}, logger: { log: () => {} }, now: () => new Date('2024-01-01T00:00:00Z') };
+
+  const context = createContext({
+    processReportException: () => {},
+    resolveIsoTimestamp: () => '2024-01-01T00:00:00Z',
+    createIngestionServices: () => services,
+    resolveLogFunction: (logger) =>
+      logger && typeof logger.log === 'function' ? logger.log.bind(logger) : () => {}
+  });
+
+  loadProcessManagerModules(context);
+
+  context.fetchUnreadResponses = function () {
+    return { state: 'OK', payload: { data: [] } };
+  };
+
+  context.ingestResponsesBatch = function () {
+    return {
+      bigQueryContext: { rawRows: [] },
+      processedDataIds: new Set(),
+      latestRecord: null,
+      lastSnapshot: snapshot
+    };
+  };
+
+  context.finalizeIngestionRun = function (
+    formulaire,
+    processingResult,
+    innerServices,
+    action,
+    targets,
+    apiPath,
+    log,
+    runTimestamp
+  ) {
+    finalizeSnapshots.push(processingResult.lastSnapshot);
+    return Object.assign(
+      {
+        status: 'INGESTED',
+        rowCount: processingResult.bigQueryContext.rawRows.length,
+        metadataUpdateStatus: 'OK',
+        runTimestamp: runTimestamp
+      },
+      { lastSnapshot: processingResult.lastSnapshot }
+    );
+  };
+
+  const result = context.handleResponses(
+    {},
+    { id: 'FORM', nom: 'Formulaire' },
+    '/forms/FORM/data',
+    'ACTION',
+    [],
+    false,
+    { services: services, targets: { bigQuery: false, externalLists: false } }
+  );
+
+  assert.strictEqual(finalizeSnapshots.length, 1, 'finalizeIngestionRun doit être invoqué');
+  assert.strictEqual(finalizeSnapshots[0], snapshot, 'Le snapshot doit être transmis à finalizeIngestionRun');
+  assert.strictEqual(result.lastSnapshot, snapshot, 'Le résultat doit contenir le snapshot final');
+}
+
+function testSheetAppBindingsRequiresModules() {
+  const context = createContext({});
+  runFile('lib/SheetAppBindings.js', context);
+  assert.throws(
+    () => context.SheetAppBindings.create({ triggers: {}, pipeline: {}, exports: {} }),
+    /module config indisponible/,
+    'SheetAppBindings doit refuser les modules incomplets'
+  );
+}
+
+function testSheetAppBindingsDelegatesToModules() {
+  const events = [];
+  const context = createContext({});
+  runFile('lib/SheetAppBindings.js', context);
+
+  const bindings = context.SheetAppBindings.create({
+    config: {
+      sanitizeBatchLimitValue: (raw) => {
+        events.push({ module: 'config', fn: 'sanitizeBatchLimitValue', raw });
+        return raw + 1;
+      },
+      getConfiguredBatchLimit: (config) => {
+        events.push({ module: 'config', fn: 'getConfiguredBatchLimit', config });
+        return config.limit;
+      },
+      sanitizeBooleanConfigFlag: (raw, def) => {
+        events.push({ module: 'config', fn: 'sanitizeBooleanConfigFlag', raw, def });
+        return raw ? 'true' : 'false';
+      },
+      readFormConfigFromSheet: (sheet) => {
+        events.push({ module: 'config', fn: 'read', sheet });
+        return { sheet };
+      },
+      writeFormConfigToSheet: (sheet, config) => {
+        events.push({ module: 'config', fn: 'write', sheet, config });
+      },
+      resolveFormulaireContext: (spreadsheet) => {
+        events.push({ module: 'config', fn: 'resolve', spreadsheet });
+        return { spreadsheet };
+      },
+      createActionCode: () => {
+        events.push({ module: 'config', fn: 'createActionCode' });
+        return 'action';
+      },
+      validateFormConfig: (rawConfig) => {
+        events.push({ module: 'config', fn: 'validate', rawConfig });
+        return { isValid: true };
+      },
+      notifyConfigErrors: (validation) => {
+        events.push({ module: 'config', fn: 'notify', validation });
+      }
+    },
+    triggers: {
+      sanitizeTriggerFrequency: (raw) => {
+        events.push({ module: 'triggers', fn: 'sanitize', raw });
+        return raw;
+      },
+      getTriggerOption: (key) => {
+        events.push({ module: 'triggers', fn: 'getOption', key });
+        return { key };
+      },
+      describeTriggerOption: (key) => {
+        events.push({ module: 'triggers', fn: 'describe', key });
+        return 'description';
+      },
+      configureTriggerFromKey: (key) => {
+        events.push({ module: 'triggers', fn: 'configure', key });
+        return { configured: key };
+      },
+      parseCustomDailyHour: (key) => {
+        events.push({ module: 'triggers', fn: 'parseDaily', key });
+        return 8;
+      },
+      formatHourLabel: (hour) => {
+        events.push({ module: 'triggers', fn: 'formatHour', hour });
+        return `H${hour}`;
+      },
+      parseCustomWeekly: (key) => {
+        events.push({ module: 'triggers', fn: 'parseWeekly', key });
+        return { dayCode: 'MON', hour: 9 };
+      },
+      formatWeekdayLabel: (code) => {
+        events.push({ module: 'triggers', fn: 'formatWeekday', code });
+        return code;
+      },
+      getStoredTriggerFrequency: () => {
+        events.push({ module: 'triggers', fn: 'getStored' });
+        return 'H1';
+      },
+      setStoredTriggerFrequency: (key) => {
+        events.push({ module: 'triggers', fn: 'setStored', key });
+        return key;
+      },
+      persistTriggerFrequencyToSheet: (key) => {
+        events.push({ module: 'triggers', fn: 'persist', key });
+      }
+    },
+    pipeline: {
+      onOpen: () => {
+        events.push({ module: 'pipeline', fn: 'onOpen' });
+      },
+      setScriptProperties: (value) => {
+        events.push({ module: 'pipeline', fn: 'setScriptProperties', value });
+      },
+      getEtatExecution: () => {
+        events.push({ module: 'pipeline', fn: 'getEtatExecution' });
+        return 'termine';
+      },
+      initBigQueryConfigFromSheet: () => {
+        events.push({ module: 'pipeline', fn: 'initBigQuery' });
+      },
+      main: (options) => {
+        events.push({ module: 'pipeline', fn: 'main', options });
+      },
+      runBigQueryDeduplication: () => {
+        events.push({ module: 'pipeline', fn: 'dedupe' });
+      },
+      launchManualDeduplication: () => {
+        events.push({ module: 'pipeline', fn: 'launch' });
+      }
+    },
+    exports: {
+      getOrCreateSubFolder: (parent, name) => {
+        events.push({ module: 'exports', fn: 'getOrCreate', parent, name });
+        return 'folder';
+      },
+      buildMediaDisplayName: (media) => {
+        events.push({ module: 'exports', fn: 'buildName', media });
+        return 'display';
+      },
+      exportPdfBlob: (form, dataId, blob, folder) => {
+        events.push({ module: 'exports', fn: 'exportPdf', form, dataId, folder });
+      },
+      exportMedias: (mediaList, folder) => {
+        events.push({ module: 'exports', fn: 'exportMedias', mediaList, folder });
+      }
+    }
+  });
+
+  const batchLimit = bindings.sanitizeBatchLimitValue(5);
+  const configured = bindings.getConfiguredBatchLimit({ limit: 42 });
+  const boolFlag = bindings.sanitizeBooleanConfigFlag(true, false);
+  bindings.readFormConfigFromSheet('sheet');
+  bindings.writeFormConfigToSheet('sheet', { foo: 'bar' });
+  bindings.resolveFormulaireContext('spreadsheet');
+  const action = bindings.createActionCode();
+  bindings.validateFormConfig({});
+  bindings.notifyConfigErrors({ errors: [] });
+
+  const option = bindings.getTriggerOption('H1');
+  bindings.describeTriggerOption('H1');
+  const configuredTrigger = bindings.configureTriggerFromKey('H1');
+  bindings.parseCustomDailyHour('H24@08');
+  bindings.formatHourLabel(10);
+  bindings.parseCustomWeekly('WD1@MON@09');
+  bindings.formatWeekdayLabel('MON');
+  bindings.getStoredTriggerFrequency();
+  bindings.setStoredTriggerFrequency('H3');
+  bindings.persistTriggerFrequencyToSheet('H3');
+
+  bindings.onOpen();
+  bindings.setScriptProperties('termine');
+  const state = bindings.getEtatExecution();
+  bindings.initBigQueryConfigFromSheet();
+  bindings.main({ origin: 'tests' });
+  bindings.runBigQueryDeduplication();
+  bindings.launchManualDeduplication();
+
+  const folder = bindings.getOrCreateSubFolder('parent', 'sub');
+  const name = bindings.buildMediaDisplayName({ id: 'media' });
+  bindings.exportPdfBlob('Form', 'DATA', {}, 'folder');
+  bindings.exportMedias([{ id: 1 }], 'folder');
+
+  assert.strictEqual(batchLimit, 6, 'Le binding config doit déléguer sanitizeBatchLimitValue');
+  assert.strictEqual(configured, 42, 'Le binding config doit déléguer getConfiguredBatchLimit');
+  assert.strictEqual(boolFlag, 'true', 'La normalisation booléenne doit être relayée');
+  assert.strictEqual(action, 'action', 'Le binding doit déléguer createActionCode');
+  assert.strictEqual(option.key, 'H1', 'Le binding doit déléguer getTriggerOption');
+  assert.strictEqual(configuredTrigger.configured, 'H1', 'La configuration trigger doit être relayée');
+  assert.strictEqual(state, 'termine', 'Le binding pipeline doit relayer getEtatExecution');
+  assert.strictEqual(folder, 'folder', 'Le binding exports doit relayer getOrCreateSubFolder');
+  assert.strictEqual(name, 'display', 'Le binding exports doit relayer buildMediaDisplayName');
+  assert.ok(events.length > 0, 'Les appels doivent être tracés');
+}
+
 function testFinalizeIngestionRun() {
   const markCalls = [];
   const externalCalls = [];
   const context = createContext({ processGetLogPrefix: () => 'lib:Data' });
 
-  runFile('lib/ProcessManager.js', context);
+  loadProcessManagerModules(context);
 
   context.markResponsesAsRead = function (formulaire, action, ids, fetchFn) {
     markCalls.push({ formulaire, action, ids });
@@ -997,7 +1257,10 @@ const tests = [
   { name: 'SheetInterfaceHelpers signale une configuration BigQuery manquante', fn: testSheetInterfaceHelpersEnsureBigQueryConfigAvailability },
   { name: 'fetchUnreadResponses gère les différents états', fn: testFetchUnreadResponsesStates },
   { name: 'ingestResponsesBatch respecte les cibles BigQuery', fn: testIngestResponsesBatchSkipsBigQuery },
+  { name: 'handleResponses propage le snapshot collecté', fn: testHandleResponsesPropagatesSnapshot },
   { name: 'finalizeIngestionRun marque les réponses et synchronise les listes', fn: testFinalizeIngestionRun },
+  { name: 'SheetAppBindings exige des modules valides', fn: testSheetAppBindingsRequiresModules },
+  { name: 'SheetAppBindings délègue aux modules fournis', fn: testSheetAppBindingsDelegatesToModules },
   { name: 'SheetDriveExports construit un nom de média stable', fn: testSheetDriveExportsBuildDisplayName }
 ];
 

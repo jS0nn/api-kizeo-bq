@@ -236,7 +236,7 @@ Lien bibliothèque → script : le script lié appelle les fonctions exposées p
 | `handleResponses(spreadsheet, formulaire, apiPath, dataEnCours, action, medias)` | `lib/ProcessManager.js:220` | Traite la liste des IDs non lues, charge les réponses complètes, écrit le Sheet, marque comme lues, met à jour listes externes. | `Spreadsheet`, `Object`, `string`, `Object`, `string`, `Array` | `Object` ou `null` | API fetch multiples, `appendRow`, `markasread`, synchronisation listes. | `requeteAPIDonnees`, `collectResponseArtifacts`, `ExternalListsService.updateFromSnapshot` | `processData` | `handleException` (retour `null`). |
 | `isNumeric(value)` | `lib/Outils.js:180` | Détermine si une valeur est numérique (parseFloat). | `any` | `bool` | — | `parseFloat` | `prepareDataForSheet`, `createNewRows` | — |
 | `main()` | `sheetInterface/Code.js:137` | Orchestrateur principal : boucle sur chaque onglet formulaire, déclenche ingestion, exports Drive, gère verrou `etatExecution`. | — | — | Appels API, modifications Sheet, copies Drive, updates ScriptProperties. | `getEtatExecution`, `setScriptProperties`, `requeteAPIDonnees`, `processData`, `exportPdfBlob`, `exportMedias`, `handleException` | Déclencheur horaire, actions UI | Try/catch global + remise `etatExecution`. |
-| `ExternalListsService.updateFromSnapshot(formulaire, dataEnCours)` | `lib/ExternalListsService.js:21` | Met à jour les listes externes Kizeo en se basant sur la dernière ligne importée. | `Object`, `Object` | `"Mise A Jour OK"` ou `null` | GET/PUT `/lists`. | `requeteAPIDonnees`, `replaceKizeoData` | `handleResponses` | `handleException`. |
+| `ExternalListsService.updateFromSnapshot(formulaire, dataEnCours)` | `lib/ExternalListsService.js:21` | Met à jour les listes externes Kizeo en se basant sur la dernière ligne importée. | `Object`, `Object` | `"Mise A Jour OK"` ou `null` | GET/PUT `/lists`. | `requeteAPIDonnees`, `ExternalListsService.replaceItems` | `handleResponses` | `handleException`. |
 | `majSheet()` | `sheetInterface/UI.js:149` | Déclenche manuellement `main`. | — | — | — | `main` | Menu utilisateur | — |
 | `onOpen()` | `sheetInterface/Code.js:38` | Ajoute le menu et affiche un avertissement sur le nom du fichier. | — | — | UI alerts. | `afficheMenu`, `SpreadsheetApp.getUi` | Trigger `onOpen` | — |
 | `prepareDataForSheet(dataResponse)` | `lib/0_Data.js:151` | Construit `headers` et `values` à partir d’une réponse Kizeo. | `Object` | `[headers, values, baseData, tabFields]` ou `null` | — | `getDataFromFields`, `isNumeric` | `saveDataToSheet` | `handleException`. |
@@ -444,7 +444,7 @@ graph TD
 | `Nom || ID` | Champs dynamiques | `kizeo_fields` | `field_name`, `field_value`, `field_type`, `numeric_value` | Flatten EAV + cast. |
 | `Nom || ID` | Colonnes sous-form (lien) | `kizeo_subform_rows` | `form_unique_id`, `subform_name`, `fields` | Lire l’onglet `|| SousForm`. |
 | `Nom || ID` | Colonnes médias | `kizeo_media_exports` | `media_name`, `drive_file_id`, `export_type` | Extraire `id=` du HYPERLINK et l’export s’il existe. |
-| Listes externes | `items` | `kizeo_external_lists` | `tag_name`, `tag_value`, `updated_at` | Parser `replaceKizeoData`. |
+| Listes externes | `items` | `kizeo_external_lists` | `tag_name`, `tag_value`, `updated_at` | Parser `ExternalListsService.replaceItems`. |
 
 ### Plan de migration
 1. **M0 – Audit & sécurisation** : isoler le token (Secret Manager), retirer les fonctions de test, documenter les formulaires actifs. |
@@ -1113,7 +1113,7 @@ function ExternalListsService.updateFromSnapshot(formulaire, dataEnCours) {
           let valeurVariableEnCours = dataEnCours.rowEnCours[indexVariableEnCours];
 
           //remplacement de la donnée de tu Tag X avec la valeur de la donnée présente dans le formulaire
-          let replacedData=replaceKizeoData(detailListeExterne.list.items, variable[0], valeurVariableEnCours);
+          let replacedData = ExternalListsService.replaceItems(detailListeExterne.list.items, variable[0], valeurVariableEnCours);
           if(replacedData===null){return null}
           methode = 'PUT';
         }
@@ -1141,7 +1141,7 @@ function ExternalListsService.updateFromSnapshot(formulaire, dataEnCours) {
  * @param {string} replaceValue - La valeur par laquelle remplacer.
  * @return {Array} - Le tableau avec les valeurs remplacées.
  */
-function replaceKizeoData(array, searchValue, replaceValue) {
+function externalListsReplaceKizeoData(array, searchValue, replaceValue) {
   try{
     let separator = '|';
 
@@ -1166,7 +1166,7 @@ function replaceKizeoData(array, searchValue, replaceValue) {
     // Renvoie le tableau modifié
     return array;
   } catch (e) {
-    handleException('replaceKizeoData', e);
+    handleException('ExternalListsService.replaceItems', e);
     return null;
   }
 }
