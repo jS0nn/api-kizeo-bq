@@ -1,4 +1,4 @@
-//Version 4.2.0
+//Version 4.4.0
 
 /**    DOC :
   https://www.kizeoforms.com/doc/swagger/v3/#/
@@ -316,11 +316,14 @@ function initBigQueryConfigFromSheet() {
     const ui = SpreadsheetApp.getUi();
     const defaults = libKizeo.initBigQueryConfig();
     const refreshedProps = PropertiesService.getDocumentProperties();
-    refreshedProps.setProperties({
-      BQ_PROJECT_ID: defaults.projectId,
-      BQ_DATASET: defaults.datasetId,
-      BQ_LOCATION: defaults.location || ''
-    }, true);
+    refreshedProps.setProperties(
+      {
+        BQ_PROJECT_ID: defaults.projectId,
+        BQ_DATASET: defaults.datasetId,
+        BQ_LOCATION: defaults.location || ''
+      },
+      true
+    );
     try {
       libKizeo.ensureBigQueryCoreTables();
     } catch (ensureError) {
@@ -329,15 +332,23 @@ function initBigQueryConfigFromSheet() {
     const finalProject = refreshedProps.getProperty('BQ_PROJECT_ID');
     const finalDataset = refreshedProps.getProperty('BQ_DATASET');
     const finalLocation = refreshedProps.getProperty('BQ_LOCATION');
-    Logger.log(`initBigQueryConfigFromSheet -> project=${finalProject}, dataset=${finalDataset}, location=${finalLocation}`);
-    ui.alert(`Configuration BigQuery initialisée :\nProjet=${finalProject}\nDataset=${finalDataset}\nLocation=${finalLocation || 'default'}`);
+    Logger.log(
+      `initBigQueryConfigFromSheet -> project=${finalProject}, dataset=${finalDataset}, location=${finalLocation}`
+    );
+    ui.alert(
+      `Configuration BigQuery initialisée :
+Projet=${finalProject}
+Dataset=${finalDataset}
+Location=${finalLocation || 'default'}`
+    );
   } catch (e) {
     libKizeo.handleException('initBigQueryConfigFromSheet', e);
   }
 }
 
+
 // ----------------------
-// Helpers Export (libérables dans libKizeo)
+// Helpers d'exports Drive
 // ----------------------
 /**
  * Retourne l'ID d'un sous‑répertoire existant ou fraîchement créé sous un dossier parent.
@@ -383,7 +394,11 @@ function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
   const fileName = `${formulaireNom}_${dataId}_${new Date()
     .toISOString()
     .replace(/[:.]/g, '-')}`;
-  libKizeo.saveBlobToFolder(pdfBlob, targetFolderId, fileName);
+  try {
+    libKizeo.DriveMediaService.getDefault().saveBlobToFolder(pdfBlob, targetFolderId, fileName);
+  } catch (driveError) {
+    libKizeo.handleException('exportPdfBlob.saveBlobToFolder', driveError, { targetFolderId, fileName });
+  }
 }
 
 /**
@@ -436,14 +451,6 @@ function exportMedias(mediaList, targetFolderId) {
 
 function readFormConfigFromSheet(sheet) {
   if (!sheet) return {};
-  try {
-    if (typeof libKizeo !== 'undefined' && typeof libKizeo.readConfigFromSheet === 'function') {
-      const config = libKizeo.readConfigFromSheet(sheet);
-      if (config) return config;
-    }
-  } catch (err) {
-    console.log(`readFormConfigFromSheet fallback: ${err && err.message ? err.message : err}`);
-  }
 
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) {
@@ -684,9 +691,7 @@ function validateFormConfig(rawConfig, sheet) {
 
   let computedTableName = '';
   try {
-    if (typeof libKizeo.bqComputeTableName === 'function') {
-      computedTableName = libKizeo.bqComputeTableName(formIdForTable, formNameForTable, tableNameCandidate);
-    }
+    computedTableName = libKizeo.bqComputeTableName(formIdForTable, formNameForTable, tableNameCandidate);
   } catch (computeError) {
     console.log(`validateFormConfig: échec calcul table -> ${computeError}`);
   }
@@ -764,12 +769,10 @@ function ensureBigQueryConfigAvailability(ingestFlag, sheetName) {
       }
     }
     try {
-      if (typeof libKizeo.handleException === 'function') {
-        libKizeo.handleException('main.BigQueryConfig', configError, {
-          missingKeys: missingKeys,
-          sheet: sheetName || ''
-        });
-      }
+      libKizeo.handleException('main.BigQueryConfig', configError, {
+        missingKeys: missingKeys,
+        sheet: sheetName || ''
+      });
     } catch (handleError) {
       console.log(`ensureBigQueryConfigAvailability: handleException KO -> ${handleError}`);
     }
@@ -866,9 +869,7 @@ function main(options) {
     const tableName = validation.config.bq_table_name;
     let aliasPart = tableName;
     try {
-      if (typeof libKizeo.bqExtractAliasPart === 'function') {
-        aliasPart = libKizeo.bqExtractAliasPart(tableName, validation.config.form_id);
-      }
+      aliasPart = libKizeo.bqExtractAliasPart(tableName, validation.config.form_id);
     } catch (aliasError) {
       console.log(`main: impossible d'extraire l'alias -> ${aliasError}`);
     }
@@ -1039,9 +1040,7 @@ function runBigQueryDeduplication() {
   const tableName = validation.config.bq_table_name;
   let aliasPart = tableName;
   try {
-    if (typeof libKizeo.bqExtractAliasPart === 'function') {
-      aliasPart = libKizeo.bqExtractAliasPart(tableName, validation.config.form_id);
-    }
+    aliasPart = libKizeo.bqExtractAliasPart(tableName, validation.config.form_id);
   } catch (aliasError) {
     console.log(`runBigQueryDeduplication: impossible d'extraire l'alias -> ${aliasError}`);
   }

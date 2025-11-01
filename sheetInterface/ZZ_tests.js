@@ -20,11 +20,11 @@ function test() {
     
     dataId=226762019		
 
-    let reponseAPIExportsData = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/pdf`,);
+    let reponseAPIExportsData = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/pdf`);
     // Sauvegarde le blob d'image dans le dossier
     let folderId="1tEyg0CoAa_KcscictxmgLSgTDwMXY13e"
-    let idFichier= libKizeo.saveBlobToFolder(reponseAPIExportsData.data, folderId, "nomImage4");
-    //let reponseAPIExportsDataPDF = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/exports/${exportId}/pdf`);
+    let idFichier = libKizeo.DriveMediaService.getDefault().saveBlobToFolder(reponseAPIExportsData.data, folderId, "nomImage4");
+    //let reponseAPIExportsDataPDF = requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/exports/${exportId}/pdf`);
     let bp=0;
   }
 
@@ -81,7 +81,7 @@ function requeteAPIDonneesExport(methode, type) {
       'methode': methode,
       'type': type
       }; 
-    handleException('requeteApiDonnees', e, context)
+    libKizeo.handleException('requeteApiDonnees', e, context)
     return {'data': data, 'responseCode': responseCode};;
   }
 
@@ -93,7 +93,7 @@ function requeteAPIDonneesExport(methode, type) {
       const json = reponse.getContentText();
       data = JSON.parse(json);
     } catch (e) {
-      handleException('requeteApiDonnees Analyse JSON', e)
+      libKizeo.handleException('requeteApiDonnees Analyse JSON', e)
     }
   }
 
@@ -120,4 +120,54 @@ function requeteAPIDonneesExport(methode, type) {
       groups...
   */
 
+function zzDescribeScenarioSheetInterface() {
+  if (typeof libKizeo === 'undefined') {
+    throw new Error('zzDescribeScenarioSheetInterface requiert la librairie libKizeo.');
+  }
+  const library = libKizeo;
+  if (typeof library.bqComputeTableName !== 'function') {
+    throw new Error('libKizeo.bqComputeTableName est requis pour zzDescribeScenarioSheetInterface.');
+  }
+
+  const fakeSheet = {
+    getName: () => 'Config',
+    getLastRow: () => 2,
+    getRange: () => ({
+      setValues: () => {},
+      clearContent: () => {},
+      getValues: () => [['Paramètre', 'Valeur']]
+    })
+  };
+
+  const config = {
+    form_id: 'FORM_SCENARIO',
+    form_name: 'Formulaire Scénario',
+    action: 'ACTION_SCENARIO',
+    bq_table_name: 'form_scenario',
+    [CONFIG_BATCH_LIMIT_KEY]: '15',
+    [CONFIG_INGEST_BIGQUERY_KEY]: 'true'
+  };
+
+  const validation = validateFormConfig(config, fakeSheet);
+
+  if (typeof library.getBigQueryConfig !== 'function') {
+    throw new Error('libKizeo.getBigQueryConfig est requis pour zzDescribeScenarioSheetInterface.');
+  }
+
+  const availability = ensureBigQueryConfigAvailability(
+    validation.config ? validation.config[CONFIG_INGEST_BIGQUERY_KEY] : 'false',
+    fakeSheet.getName()
+  );
+
+  const summary = {
+    isValid: validation.isValid,
+    tableName: validation.config ? validation.config.bq_table_name : null,
+    batchLimit: validation.config ? validation.config[CONFIG_BATCH_LIMIT_KEY] : null,
+    availability
+  };
+
+  Logger.log(`zzDescribeScenarioSheetInterface -> ${JSON.stringify(summary)}`);
+
+  return summary;
+}
   

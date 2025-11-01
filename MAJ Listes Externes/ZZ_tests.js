@@ -20,10 +20,10 @@ function test() {
     
     dataId=226762019		
 
-    let reponseAPIExportsData = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/pdf`,);
+    let reponseAPIExportsData = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/pdf`);
     // Sauvegarde le blob d'image dans le dossier
     let folderId="1tEyg0CoAa_KcscictxmgLSgTDwMXY13e"
-    let idFichier= libKizeo.saveBlobToFolder(reponseAPIExportsData.data, folderId, "nomImage4");
+    let idFichier = libKizeo.DriveMediaService.getDefault().saveBlobToFolder(reponseAPIExportsData.data, folderId, "nomImage4");
     //let reponseAPIExportsDataPDF = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/exports/${exportId}/pdf`);
     let bp=0;
   }
@@ -81,7 +81,7 @@ function requeteAPIDonneesExport(methode, type) {
       'methode': methode,
       'type': type
       }; 
-    handleException('requeteApiDonnees', e, context)
+    libKizeo.handleException('requeteApiDonnees', e, context)
     return {'data': data, 'responseCode': responseCode};;
   }
 
@@ -93,7 +93,7 @@ function requeteAPIDonneesExport(methode, type) {
       const json = reponse.getContentText();
       data = JSON.parse(json);
     } catch (e) {
-      handleException('requeteApiDonnees Analyse JSON', e)
+      libKizeo.handleException('requeteApiDonnees Analyse JSON', e)
     }
   }
 
@@ -120,4 +120,70 @@ function requeteAPIDonneesExport(methode, type) {
       groups...
   */
 
-  
+function zzDescribeScenarioMajListesExternes() {
+  const formulaire = { id: 'FORM_SCENARIO', nom: 'Formulaire Scénario' };
+  const snapshot = {
+    existingHeaders: ['id', 'champ'],
+    rowEnCours: ['rec-001', 'Valeur mise à jour']
+  };
+
+  const putCalls = [];
+  if (typeof libKizeo === 'undefined' || !libKizeo.ExternalListsService) {
+    throw new Error('libKizeo.ExternalListsService indisponible');
+  }
+  if (typeof libKizeo.ExternalListsService.updateFromSnapshot !== 'function') {
+    throw new Error('libKizeo.ExternalListsService.updateFromSnapshot indisponible');
+  }
+
+  const result = libKizeo.ExternalListsService.updateFromSnapshot(formulaire, snapshot, {
+    fetch: function (method, path, payload) {
+      if (method === 'GET' && path === '/lists') {
+        return {
+          data: {
+            lists: [
+              {
+                id: 'LISTE_1',
+                name: `${formulaire.nom} || ${formulaire.id}`
+              }
+            ]
+          }
+        };
+      }
+      if (method === 'GET' && path === '/lists/LISTE_1') {
+        return {
+          data: {
+            list: {
+              items: ['id:id|champ:champ', 'rec-000:rec-000|champ:champ']
+            }
+          }
+        };
+      }
+      if (method === 'PUT' && path === '/lists/LISTE_1') {
+        putCalls.push(payload);
+        return { data: { status: 'ok' }, responseCode: 200 };
+      }
+      return { data: { status: 'IGNORED' }, responseCode: 200 };
+    },
+    log: function (message) {
+      Logger.log(`ExternalListsService[scenario]: ${message}`);
+    },
+    handleException: function (name, error, context) {
+      Logger.log(`ExternalListsService[scenario] ${name}: ${error}`);
+      if (context) {
+        try {
+          Logger.log(`Context: ${JSON.stringify(context)}`);
+        } catch (jsonError) {
+          Logger.log(`Context stringify KO: ${jsonError}`);
+        }
+      }
+    }
+  });
+
+  const summary = {
+    status: result,
+    putCalls: putCalls.length,
+    samplePayload: putCalls.length ? putCalls[0] : null
+  };
+  Logger.log(`zzDescribeScenarioMajListesExternes -> ${JSON.stringify(summary)}`);
+  return summary;
+}

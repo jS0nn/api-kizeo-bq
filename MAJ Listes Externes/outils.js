@@ -142,7 +142,11 @@ function uiHandleException(functionName, error, context) {
     lowerMessage.indexOf('authorization') !== -1 ||
     lowerMessage.indexOf('auth') !== -1;
 
-  if (!authRelated && typeof libKizeo !== 'undefined' && typeof libKizeo.handleException === 'function') {
+  if (
+    !authRelated &&
+    typeof libKizeo !== 'undefined' &&
+    typeof libKizeo.handleException === 'function'
+  ) {
     try {
       libKizeo.handleException(functionName, error, context);
     } catch (mailError) {

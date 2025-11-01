@@ -3,7 +3,8 @@
 
 ## Title & Abstract
 - **Titre :** Kizeo to Sheets Apps Script → BigQuery – Global Context & BigQuery Migration Prep
-- **Résumé exécutif :** La solution repose sur une bibliothèque Apps Script (`libKizeo`) et un script lié à Google Sheets qui orchestrent l’ingestion des formulaires Kizeo et leur stockage. Les fonctions clés `processData` et `handleResponses` récupèrent les réponses non lues, les écrivent dans des onglets `Nom || ID`, marquent les entrées comme lues et synchronisent les listes externes. L’interface côté Sheet (menus, modales HTML) permet à l’utilisateur de sélectionner un formulaire, de configurer un déclencheur horaire et de lancer des exports Drive (PDF, médias) via `main`. Les médias sont téléchargés avec `gestionChampImage`, stockés dans Drive et référencés dans le Sheet par des formules `HYPERLINK`, tandis que les sous-formulaires sont ventilés dans des onglets dédiés. La robustesse dépend de `handleException` (logs + email) et de la ScriptProperty `etatExecution`, mais aucun retry ni gestion fine des quotas n’est en place et le token Kizeo est lu depuis un autre Sheet. Ce document synthétise l’architecture, l’inventaire fonctionnel exhaustif, la cartographie API, le modèle de données et fournit un plan détaillé pour migrer la solution vers BigQuery. Les inconnues (identifiants cibles, gouvernance du secret, formulaires en production) sont listées en fin de document pour validation.
+- **Résumé exécutif :** La solution repose sur une bibliothèque Apps Script (chargée via `libKizeo` dans le manifest) et un script lié à Google Sheets qui orchestrent l’ingestion des formulaires Kizeo et leur stockage. Les fonctions clés `processData` et `handleResponses` récupèrent les réponses non lues, marquent les entrées comme lues, synchronisent les listes externes et sérialisent les sous-formulaires en JSON (les anciens onglets dédiés ont été abandonnés). L’interface côté Sheet (menus, modales HTML) permet à l’utilisateur de sélectionner un formulaire, de configurer un déclencheur horaire et de lancer des exports Drive (PDF, médias) via `main`. Les médias sont téléchargés avec `gestionChampImage`, stockés dans Drive et référencés dans le Sheet par des formules `HYPERLINK`. La robustesse dépend de `handleException` (logs + email) et de la ScriptProperty `etatExecution`, mais aucun retry ni gestion fine des quotas n’est en place et le token Kizeo est lu depuis un autre Sheet. Ce document synthétise l’architecture, l’inventaire fonctionnel exhaustif, la cartographie API, le modèle de données et fournit un plan détaillé pour migrer la solution vers BigQuery. Les inconnues (identifiants cibles, gouvernance du secret, formulaires en production) sont listées en fin de document pour validation.
+- **Note** : certaines sections détaillent l’ancien fonctionnement (persistance Sheets, module `SheetSnapshot`). Elles sont conservées à titre historique ; la mise en production actuelle s’appuie uniquement sur `FormResponseSnapshot` + `DriveMediaService`.
 - **Table des matières :**
   - [Title & Abstract](#title--abstract)
   - [Architecture Overview](#architecture-overview)
@@ -33,7 +34,7 @@ flowchart LR
         A6[GET/PUT /lists]
     end
 
-    subgraph AppsScriptLibrary["Apps Script Library libKizeo"]
+    subgraph AppsScriptLibrary["Apps Script Library (exposée globalement)"]
         L1[processData]
         L2[handleResponses]
         L3[saveDataToSheet]
@@ -81,7 +82,7 @@ flowchart LR
 sequenceDiagram
     participant Trigger as Déclencheur/Main
     participant Sheet as Spreadsheet
-    participant Lib as libKizeo.processData
+    participant Lib as processData
     participant Kizeo as Kizeo API
     participant Drive as Google Drive
 
@@ -176,7 +177,7 @@ erDiagram
 ### Arborescences
 | Répertoire | Contenu |
 |---|---|
-| `lib/` | `0_Data.js`, `APIHandler.js`, `BigQuery.js`, `GestionErreurs.gs.js`, `Images.js`, `ListesExternes.js`, `Outils.js`, `Tableaux.js`, `VarGlobales.js`, `zz_Tests.js`, `appsscript.json`. |
+| `lib/` | `0_Data.js`, `APIHandler.js`, `bigquery/ingestion.js`, `DriveMediaService.js`, `GestionErreurs.gs.js`, `ListesExternes.js`, `Outils.js`, `VarGlobales.js`, `zz_Tests.js`, `appsscript.json`. |
 | `sheetInterface/` | `Code.js`, `outils.js`, `UI.js`, `appsscript.json`, `afficheSelectForm.html`, `timeIntervalSelector.html`, `ZZ_tests.js`. |
 
 ### Manifests Apps Script
@@ -189,35 +190,37 @@ erDiagram
 | Composant | Responsabilités | Fichiers | Points d’entrée | Triggers | Dépendances |
 |---|---|---|---|---|---|
 | Ingestion API | Récupérer les réponses non lues, marquer comme lues, retourner médias | `lib/0_Data.js`, `lib/APIHandler.js` | `processData`, `handleResponses` | Appelé par `main` | `UrlFetchApp`, `SpreadsheetApp` |
-| Mapping Sheet | Normalisation données, entêtes dynamiques, sous-formulaires, conversions | `lib/0_Data.js`, `lib/Tableaux.js` | `saveDataToSheet`, `prepareDataToRowFormat` | — | `SpreadsheetApp`, `DriveApp` |
-| Médias Drive | Télécharger blobs (photos/signatures), créer dossiers, exporter PDF | `lib/Images.js`, `sheetInterface/Code.js` | `gestionChampImage`, `exportPdfBlob`, `exportMedias` | — | `DriveApp`, `UrlFetchApp` |
+| Mapping Sheet | Normalisation données, entêtes dynamiques, sérialisation JSON des sous-formulaires | `lib/FormResponseSnapshot.js` | `buildRowSnapshot`, `extractFields`, `prepareDataForSheet` | — | `SpreadsheetApp`, `DriveApp` |
+| Médias Drive | Télécharger blobs (photos/signatures), créer dossiers, exporter PDF | `lib/DriveMediaService.js`, `sheetInterface/Code.js` | `DriveMediaService.processField`, `exportPdfBlob`, `exportMedias` | — | `DriveApp`, `UrlFetchApp` |
 | Listes externes | Mettre à jour tags Kizeo après traitement complet | `lib/ListesExternes.js` | `majListeExterne` | — | `requeteAPIDonnees` |
-| Déduplication & maintenance | Purger les doublons côté BigQuery, surveiller les buffers streaming | `lib/BigQuery.js` | `bqPurgeDuplicateParentRows`, `bqPurgeDuplicateSubTableRows` | — | `BigQuery` |
+| Déduplication & maintenance | Purger les doublons côté BigQuery, surveiller les buffers streaming | `lib/bigquery/ingestion.js` | `bqPurgeDuplicateParentRows`, `bqPurgeDuplicateSubTableRows` | — | `BigQuery` |
 | Gestion erreurs | Journaliser et notifier par mail | `lib/GestionErreurs.gs.js` | `handleException` | — | `MailApp`, `ScriptApp` |
 | UI & scheduling | Menu Sheets, modales HTML, sélection formulaire, déclencheurs | `sheetInterface/UI.js`, `sheetInterface/outils.js` | `afficheMenu`, `chargeSelectForm`, `enregistrementUI`, `configurerDeclencheurHoraire` | `onOpen`, time-based | `HtmlService`, `PropertiesService` |
-| Orchestrateur | Boucle sur formulaires, valide la config, lance ingestion, exports Drive, gère verrou `etatExecution` | `sheetInterface/Code.js` | `main` | Déclencheur horaire configurable | `libKizeo`, `DriveApp`, `PropertiesService` |
+| Orchestrateur | Boucle sur formulaires, valide la config, lance ingestion, exports Drive, gère verrou `etatExecution` | `sheetInterface/Code.js` | `main` | Déclencheur horaire configurable | `processData`, `DriveMediaService`, `DriveApp`, `PropertiesService` |
 
-Lien bibliothèque → script : le script lié appelle les fonctions exposées par la librairie `libKizeo` (ex. `libKizeo.processData` dans `sheetInterface/Code.js:173`, `libKizeo.handleException` dans `sheetInterface/UI.js:11`).
+> Note : `lib/Tableaux.js` et `lib/SheetSnapshot.js` ont été retirés (octobre 2025). La construction des snapshots et la sérialisation des sous-formulaires sont gérées exclusivement par `lib/FormResponseSnapshot.js`.
+
+Lien bibliothèque → script : le script lié appelle les fonctions exposées par la librairie `libKizeo` (ex. `processData` dans `sheetInterface/Code.js:173`, `handleException` dans `sheetInterface/UI.js:11`).
 
 ## Function Inventory
 **Sommaire rapide (A→Z)** : `afficheMenu`, `appendRowsToSheet`, `bqBackfillForm`, `chargeSelectForm`, `chargelisteFormulaires`, `configurerDeclencheurHoraire`, `createHyperlinkToSheet`, `createNewRows`, `deleteAllTriggers`, `emailLogger`, `enregistrementUI`, `exportMedias`, `exportPdfBlob`, `getColumnIndices`, `getDataFromFields`, `getEtatExecution`, `getNewHeaders`, `getOrCreateFolder`, `getOrCreateHeaders`, `getOrCreateSheet`, `getOrCreateSubFolder`, `gestionChampImage`, `gestionFeuilles`, `gestionTableaux`, `handleException`, `handleResponses`, `isNumeric`, `main`, `majListeExterne`, `majSheet`, `onOpen`, `openTriggerFrequencyDialog`, `prepareDataForSheet`, `prepareDataToRowFormat`, `prepareSheet`, `processData`, `processIntervalChoice`, `requeteAPIDonnees`, `saveBlobToFolder`, `saveDataToSheet`, `setScriptProperties`, `setScriptPropertiesTermine`.
 
 | Function | File:Line | Purpose | Inputs | Outputs | Side effects | Calls | Called by | Errors/Retry |
 |---|---|---|---|---|---|---|---|---|
-| `afficheMenu()` | `sheetInterface/UI.js:6` | Ajoute le menu personnalisé « Configuration Kizeo » dans l’UI. | — | — | Crée un menu via `SpreadsheetApp.getUi()`. | `SpreadsheetApp.getUi`, `libKizeo.handleException` (si erreur) | `onOpen` | Gestion d’erreur via `handleException`. |
+| `afficheMenu()` | `sheetInterface/UI.js:6` | Ajoute le menu personnalisé « Configuration Kizeo » dans l’UI. | — | — | Crée un menu via `SpreadsheetApp.getUi()`. | `SpreadsheetApp.getUi`, `handleException` (si erreur) | `onOpen` | Gestion d’erreur via `handleException`. |
 | `appendRowsToSheet(sheet, rows)` | `lib/Tableaux.js:120` | Insère un lot de lignes dans un onglet de sous-formulaire. | `Sheet`, `Array<Array>` | — | Écrit via `Range.setValues`. | — | `gestionTableaux` | Erreurs propagées (pas de retry). |
 | `bqBackfillForm(formId, options)` | `lib/0_Data.js:491` | Exécute un backfill BigQuery direct (raw, parent, sous-formes, médias optionnels). | `string`, `Object?` (startDate, endDate, chunkSize, includeMedia, spreadsheetId) | `Object` (résumé d’ingestion) | Appels BigQuery (`insertAll`), lecture Kizeo `data/all`, Drive optionnel si médias. | `createIngestionServices`, `requeteAPIDonnees`, helpers BigQuery (`bqIngest*`) | Exécution manuelle (`clasp run`), scénarios `zzDescribeScenarioBackfill*` | `handleException`, pas de retry automatique, chunking configurable. |
 | `openTriggerFrequencyDialog()` | `sheetInterface/UI.js:137` | Affiche la modale HTML de configuration des déclencheurs. | — | — | Interaction UI (`HtmlService`). | `HtmlService.createTemplateFromFile`, `getStoredTriggerFrequency` | Menu utilisateur | `uiHandleException` sur erreur. |
 | `chargeSelectForm()` | `sheetInterface/UI.js:26` | Ouvre la modale de sélection de formulaire. | — | — | UI modale (HtmlService). | `HtmlService.createTemplateFromFile`, `SpreadsheetApp.getUi` | Menu « Configuration Kizeo » | `handleException`. |
-| `chargelisteFormulaires()` | `sheetInterface/UI.js:43` | Récupère et trie la liste Kizeo des formulaires. | — | `Array` de formulaires | Appel API (`UrlFetch`). | `libKizeo.requeteAPIDonnees` | `afficheSelectForm.html` via `google.script.run` | `handleException`. |
+| `chargelisteFormulaires()` | `sheetInterface/UI.js:43` | Récupère et trie la liste Kizeo des formulaires. | — | `Array` de formulaires | Appel API (`UrlFetch`). | `requeteAPIDonnees` | `afficheSelectForm.html` via `google.script.run` | `handleException`. |
 | `configurerDeclencheurHoraire(valeur, type)` | `sheetInterface/outils.js:7` | Configure un déclencheur temporel pour `main`. | `number`, `'M'|'H'` | — | Supprime puis crée un trigger. | `deleteAllTriggers`, `ScriptApp.newTrigger` | `processIntervalChoice` | `handleException`. |
 | `createHyperlinkToSheet(spreadsheet, sheet)` | `lib/Tableaux.js:129` | Génère une formule `HYPERLINK` vers un sous-onglet. | `Spreadsheet`, `Sheet` | `string` | Aucun. | — | `gestionTableaux` | Pas de gestion spécifique. |
 | `createNewRows(tableau, idReponse, headers, formId, spreadsheet)` | `lib/Tableaux.js:93` | Formate les lignes d’un sous-formulaire (y compris médias). | `Array<Object>`, `string`, `Array<string>`, `string`, `Spreadsheet` | `Array<Array>` | Peut déclencher téléchargements médias. | `gestionChampImage`, `isNumeric` | `gestionTableaux` | Exceptions capturées en amont par `gestionTableaux`. |
 | `deleteAllTriggers()` | `sheetInterface/outils.js:32` | Supprime tous les déclencheurs du projet. | — | — | `ScriptApp.deleteTrigger`. | `ScriptApp.getProjectTriggers` | `configurerDeclencheurHoraire`, `processIntervalChoice` | `handleException`. |
 | `emailLogger(javascriptObject, functionName, context, fileName)` | `lib/Outils.js:51` | Envoie un JSON de debug par email. | `Object`, `string`, `Object`, `string` | — | Envoi MailApp + pièce jointe. | `MailApp.sendEmail` | Tests (`lib/zz_Tests.js`) | Pas de retry. |
-| `enregistrementUI(formulaire)` | `sheetInterface/UI.js:62` | Prépare un formulaire sélectionné et lance `main`. | `{id, nom}` | — | Met à jour ScriptProperties, appelle `libKizeo.gestionFeuilles` puis `main`. | `Session.getActiveUser`, `setScriptProperties`, `libKizeo.gestionFeuilles`, `main` | Soumission UI | `handleException`. |
+| `enregistrementUI(formulaire)` | `sheetInterface/UI.js:62` | Prépare un formulaire sélectionné et lance `main`. | `{id, nom}` | — | Met à jour ScriptProperties, appelle `gestionFeuilles` puis `main`. | `Session.getActiveUser`, `setScriptProperties`, `gestionFeuilles`, `main` | Soumission UI | `handleException`. |
 | `exportMedias(mediaList, targetFolderId)` | `sheetInterface/Code.js:100` | Copie les médias collectés dans un sous-dossier Drive `media`. | `Array`, `string` | — | Copie de fichiers Drive. | `getOrCreateSubFolder`, `DriveApp.getFileById` | `main` | Try/catch interne (log), pas de retry. |
-| `exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId)` | `sheetInterface/Code.js:89` | Sauvegarde un export PDF dans Drive avec nom horodaté. | `string`, `string`, `Blob`, `string` | — | Écriture Drive via `libKizeo.saveBlobToFolder`. | `libKizeo.saveBlobToFolder` | `main` | Exceptions remontées (catch dans `main`). |
+| `exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId)` | `sheetInterface/Code.js:89` | Sauvegarde un export PDF dans Drive avec nom horodaté. | `string`, `string`, `Blob`, `string` | — | Écriture Drive via `saveBlobToFolder`. | `saveBlobToFolder` | `main` | Exceptions remontées (catch dans `main`). |
 | `getColumnIndices(values, headers, existingHeaders, sheet)` | `lib/0_Data.js:250` | Associe chaque valeur à une colonne, ajoute entêtes manquantes. | `Array`, `Array`, `Array`, `Sheet` | `Array<number>` ou `null` | Peut écrire de nouveaux entêtes. | — | `saveDataToSheet` | `handleException`, retourne `null` en cas d’erreur. |
 | `getDataFromFields(dataResponse)` | `lib/0_Data.js:202` | Transforme `fields` en tableaux `labels/types/valeurs`. | `Object` | `Array[3][]` ou `null` | — | — | `prepareDataForSheet` | `handleException`. |
 | `getEtatExecution()` | `sheetInterface/Code.js:60` | Lit la ScriptProperty `etatExecution`. | — | `string` ou `null` | — | `PropertiesService.getScriptProperties` | `main` | — |
@@ -232,7 +235,7 @@ Lien bibliothèque → script : le script lié appelle les fonctions exposées p
 | `handleException(functionName, error, context)` | `lib/GestionErreurs.gs.js:8` | Centralise les erreurs (console + email avec contexte). | `string`, `Error`, `Object` | — | Email via `MailApp`. | `MailApp.sendEmail`, `SpreadsheetApp`, `ScriptApp` | Appelé par la plupart des try/catch | Pas de retry automatique. |
 | `handleResponses(spreadsheet, formulaire, apiPath, dataEnCours, action, medias)` | `lib/0_Data.js:41` | Traite la liste des IDs non lues, charge les réponses complètes, écrit le Sheet, marque comme lues, met à jour listes externes. | `Spreadsheet`, `Object`, `string`, `Object`, `string`, `Array` | `Object` ou `null` | API fetch multiples, `appendRow`, `markasread`, synchronisation listes. | `requeteAPIDonnees`, `saveDataToSheet`, `majListeExterne` | `processData` | `handleException` (retour `null`). |
 | `isNumeric(value)` | `lib/Outils.js:180` | Détermine si une valeur est numérique (parseFloat). | `any` | `bool` | — | `parseFloat` | `prepareDataForSheet`, `createNewRows` | — |
-| `main()` | `sheetInterface/Code.js:137` | Orchestrateur principal : boucle sur chaque onglet formulaire, déclenche ingestion, exports Drive, gère verrou `etatExecution`. | — | — | Appels API, modifications Sheet, copies Drive, updates ScriptProperties. | `getEtatExecution`, `setScriptProperties`, `libKizeo.requeteAPIDonnees`, `libKizeo.processData`, `exportPdfBlob`, `exportMedias`, `libKizeo.handleException` | Déclencheur horaire, actions UI | Try/catch global + remise `etatExecution`. |
+| `main()` | `sheetInterface/Code.js:137` | Orchestrateur principal : boucle sur chaque onglet formulaire, déclenche ingestion, exports Drive, gère verrou `etatExecution`. | — | — | Appels API, modifications Sheet, copies Drive, updates ScriptProperties. | `getEtatExecution`, `setScriptProperties`, `requeteAPIDonnees`, `processData`, `exportPdfBlob`, `exportMedias`, `handleException` | Déclencheur horaire, actions UI | Try/catch global + remise `etatExecution`. |
 | `majListeExterne(formulaire, dataEnCours)` | `lib/ListesExternes.js:21` | Met à jour les listes externes Kizeo en se basant sur la dernière ligne importée. | `Object`, `Object` | `"Mise A Jour OK"` ou `null` | GET/PUT `/lists`. | `requeteAPIDonnees`, `replaceKizeoData` | `handleResponses` | `handleException`. |
 | `majSheet()` | `sheetInterface/UI.js:149` | Déclenche manuellement `main`. | — | — | — | `main` | Menu utilisateur | — |
 | `onOpen()` | `sheetInterface/Code.js:38` | Ajoute le menu et affiche un avertissement sur le nom du fichier. | — | — | UI alerts. | `afficheMenu`, `SpreadsheetApp.getUi` | Trigger `onOpen` | — |
@@ -334,7 +337,7 @@ graph TD
 |---|---|
 | Feuilles principales | Un onglet `NomFormulaire || formId` par formulaire (`lib/Outils.js:9`). Colonnes de base + champs dynamiques. |
 | Sous-formulaires | Onglets `NomFormulaire || formId || NomSousForm`, liens depuis la feuille principale (`lib/Tableaux.js:17`). |
-| Clé d’unicité | `form_unique_id`, utilisée par la déduplication BigQuery (`lib/BigQuery.js:1192`, `lib/BigQuery.js:1293`). |
+| Clé d’unicité | `form_unique_id`, utilisée par la déduplication BigQuery (`lib/bigquery/ingestion.js`, sections `bqPurgeDuplicateParentRows` et `bqPurgeDuplicateSubTableRows`). |
 | Types implicites | Conversion numérique via `isNumeric`, dates conservées au format chaîne ISO. |
 | Formules | Liens Drive sous forme `=HYPERLINK(...)`; aucun calcul complexe. |
 | Performance | Ajout ligne par ligne (`appendRow`) dans le Sheet, déduplication finale exécutée côté BigQuery (`bqPurgeDuplicateParentRows`). |
@@ -356,6 +359,18 @@ graph TD
 | `etatExecution` | ScriptProperties (`setScriptProperties`, `getEtatExecution`). | Verrou anti chevauchements. |
 | Librairie Apps Script | `libKizeo` (`sheetInterface/appsscript.json`). | Expose les fonctions de `lib/` au script lié. |
 | Services OAuth | Drive, Spreadsheets, Mail, UrlFetch, HtmlService. | Implicitement requis par les Apps Script utilisés. |
+
+### Procédure de rotation
+- **Token Kizeo**
+  1. Mettre à jour la cellule `token!A1` du classeur dédié avec le nouveau jeton fourni par Kizeo.
+  2. Exécuter `cacheResetKizeoToken()` dans la librairie (éditeur Apps Script ou `clasp run cacheResetKizeoToken`) pour vider le cache mémoire.
+  3. Relancer `zzDescribeScenarioProcessManager` ou `main` afin de confirmer l’authentification.
+  4. Archiver la date de rotation dans le coffre-fort d’équipe.
+- **ScriptProperties BigQuery**
+  1. Ouvrir **Project Settings** → `Script properties` et mettre à jour `BQ_PROJECT_ID`, `BQ_DATASET`, `BQ_LOCATION`.
+  2. Facultatif : utiliser `initBigQueryConfigFromSheet` (menu Configuration Kizeo) pour synchroniser les valeurs depuis la feuille.
+  3. Vérifier immédiatement avec `zzDescribeScenarioSheetInterface` ou `runBigQueryDeduplication`.
+  4. Noter toute valeur hors standard dans l’onglet `Config` et `docs/test-runs.md`.
 
 ### Configuration requise (onglet « Nom || ID »)
 - **Champs obligatoires** : `form_id` (string non vide), `form_name` (string non vide), `bq_table_name` (string ≤ 128 caractères), `action` (code `act_*`). Les colonnes supplémentaires (`export_*`, options Drive…) restent libres.
@@ -415,7 +430,7 @@ graph TD
 - Sous-formulaires : utiliser (`form_unique_id`, `subform_name`, `row_index`) comme clé composite. |
 
 ### Déduplication BigQuery
-- `bqPurgeDuplicateParentRows` (lib/BigQuery.js) supprime les doublons de la table parent en conservant, pour chaque `form_unique_id`, la ligne la plus récente selon `update_time` puis `ingestion_time`. La purge est déclenchée automatiquement après `bqIngestParentBatch` et trace un audit (`action = parent_dedupe`, `row_count = numDmlAffectedRows`).
+- `bqPurgeDuplicateParentRows` (`lib/bigquery/ingestion.js`) supprime les doublons de la table parent en conservant, pour chaque `form_unique_id`, la ligne la plus récente selon `update_time` puis `ingestion_time`. La purge est déclenchée automatiquement après `bqIngestParentBatch` et trace un audit (`action = parent_dedupe`, `row_count = numDmlAffectedRows`).
 - `bqPurgeDuplicateSubTableRows` applique le même principe sur chaque table fille : pour chaque couple (`parent_data_id`, `sub_row_index`) on ne garde que la ligne dont `parent_update_time` est la plus récente (repli sur `ingestion_time`). Les opérations sont déclenchées après `bqIngestSubTablesBatch` et enregistrées avec `action = subform_dedupe`.
 - Les requêtes `DELETE` reposent sur une CTE `ROW_NUMBER()` partitionnée qui garantit l’unicité logique tout en conservant l’historique récent s’il existe des mises à jour multiples dans le même batch.
 - Les volumes purgés sont loggés dans la table `etl_audit` et remontent dans les logs Apps Script (`console.log`) pour faciliter le suivi des ré-ingestions.
@@ -1527,7 +1542,7 @@ function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
   const fileName = `${formulaireNom}_${dataId}_${new Date()
     .toISOString()
     .replace(/[:.]/g, '-')}`;
-  libKizeo.saveBlobToFolder(pdfBlob, targetFolderId, fileName);
+  saveBlobToFolder(pdfBlob, targetFolderId, fileName);
 }
 
 /**
@@ -1591,7 +1606,7 @@ function main() {
       if (extra || !formId) continue; // hors nomenclature
 
       // ---------- Récupération des nouvelles données ----------
-      const unreadResp = libKizeo.requeteAPIDonnees(
+      const unreadResp = requeteAPIDonnees(
         'GET',
         `/forms/${formId}/data/unread/${action}/${nbFormulairesACharger}?includeupdated`
       );
@@ -1606,7 +1621,7 @@ function main() {
       }
 
       // ---------- Écriture dans la feuille + récupération médias ----------
-      const processResult = libKizeo.processData(
+      const processResult = processData(
         spreadsheetBdD,
         { nom: formNom, id: formId },
         action,
@@ -1645,7 +1660,7 @@ function main() {
         if (['pdf', 'pdfmedia'].includes(typeExport)) {
           console.log("Export type PDF pour "+dataId)
           try {
-            const pdfResp = libKizeo.requeteAPIDonnees('GET', `/forms/${formId}/data/${dataId}/pdf`);
+            const pdfResp = requeteAPIDonnees('GET', `/forms/${formId}/data/${dataId}/pdf`);
             exportPdfBlob(formNom, dataId, pdfResp.data, targetFolderId);
           } catch (e) {
             Logger.log(`Erreur export PDF : ${e.message}`);
@@ -1661,7 +1676,7 @@ function main() {
     setScriptProperties('termine');
   } catch (e) {
     setScriptProperties('termine');
-    libKizeo.handleException('main', e);
+    handleException('main', e);
   }
 }
 
@@ -1749,7 +1764,7 @@ function afficheMenu() {
       .addItem('Configurer la mise à jour automatique', 'openTriggerFrequencyDialog')
       .addToUi();
   } catch (e) {
-    libKizeo.handleException('afficheMenu', e);
+    handleException('afficheMenu', e);
   }
 }
 
@@ -1766,7 +1781,7 @@ function chargeSelectForm() {
     const htmlOutput = htmlServeur.evaluate().setWidth(800).setHeight(800);
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, ' ');
   } catch (e) {
-    libKizeo.handleException('chargeSelectForm', e);
+    handleException('chargeSelectForm', e);
   }
 }
 
@@ -1779,12 +1794,12 @@ function chargeSelectForm() {
  */
 function chargelisteFormulaires() {
   try {
-    const listeFormulaires = libKizeo.requeteAPIDonnees('GET',`/forms`).data;
+    const listeFormulaires = requeteAPIDonnees('GET',`/forms`).data;
     const tableauForms = listeFormulaires.forms.sort((a, b) =&gt; a.name.localeCompare(b.name));
 
     return tableauForms;
   } catch (e) {
-    libKizeo.handleException('chargelisteFormulaires', e);
+    handleException('chargelisteFormulaires', e);
   }
 }
 
@@ -1814,12 +1829,12 @@ function enregistrementUI(formulaire) {
     let action=SpreadsheetApp.getActiveSpreadsheet().getName()
     setScriptProperties('enCours')
     //console.log(formulaire);
-    libKizeo.gestionFeuilles(spreadsheetBdD, formulaire)   
+    gestionFeuilles(spreadsheetBdD, formulaire)   
     setScriptProperties('termine')
 
     main() //une fois préparé on lance main
   } catch (e) {
-    libKizeo.handleException('enregistrementUI', e, { formulaire: formulaire, user: user });
+    handleException('enregistrementUI', e, { formulaire: formulaire, user: user });
   }
 }
 

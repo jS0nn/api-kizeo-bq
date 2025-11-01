@@ -77,7 +77,7 @@ function confirmDeleteTriggers() {
  */
 function chargelisteFormulaires() {
   try {
-    const listeFormulaires = libKizeo.requeteAPIDonnees('GET',`/forms`).data;
+    const listeFormulaires = libKizeo.requeteAPIDonnees('GET', `/forms`).data;
     const tableauForms = listeFormulaires.forms.sort((a, b) => a.name.localeCompare(b.name));
 
     return tableauForms;
@@ -112,9 +112,7 @@ function enregistrementUI(formulaire) {
 
     let tableName = '';
     try {
-      if (typeof libKizeo.bqComputeTableName === 'function') {
-        tableName = libKizeo.bqComputeTableName(formulaireData.id, formulaireData.nom, rawTableName);
-      }
+      tableName = libKizeo.bqComputeTableName(formulaireData.id, formulaireData.nom, rawTableName);
     } catch (computeError) {
       Logger.log(`enregistrementUI: échec calcul nom table -> ${computeError}`);
     }
@@ -143,7 +141,7 @@ function enregistrementUI(formulaire) {
       const targetSheet = libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
       if (!targetSheet) {
         ui.alert('Erreur', 'Impossible de préparer la feuille de configuration.', ui.ButtonSet.OK);
-        Logger.log('enregistrementUI: gestionFeuilles a renvoyé null.');
+        Logger.log('enregistrementUI: libKizeo.gestionFeuilles a renvoyé null.');
         return;
       }
 
@@ -185,6 +183,7 @@ function enregistrementUI(formulaire) {
     libKizeo.handleException('enregistrementUI', e, { formulaire: formulaire, user: user });
   }
 }
+
 
 /**
  * Lancement manuel du programme de maj

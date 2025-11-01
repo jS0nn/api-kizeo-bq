@@ -1,7 +1,8 @@
 # Kizeo → Sheets → BigQuery
 
 ## Vue d’ensemble
-- Automatisation Apps Script divisée en deux projets : une bibliothèque (`lib/`) et un script lié à un classeur (`sheetInterface/`).
+- Automatisation Apps Script divisée en deux projets : une bibliothèque (`lib/`) et un script lié à un classeur (`sheetInterface/`). Les fonctions de la bibliothèque sont exposées directement dans l’espace global (`processData`, `requeteAPIDonnees`, `bqComputeTableName`, …).
+- Les manifests (`sheetInterface/appsscript.json`, `MAJ Listes Externes/appsscript.json`) référencent la bibliothèque sous le symbole `libKizeo` uniquement pour la charger ; le code applicatif invoque désormais les fonctions globales sans alias supplémentaire.
 - Ingestion des formulaires Kizeo, synchronisation des sous-formulaires et export des médias vers Drive.
 - Déduplication BigQuery déclenchée automatiquement et disponible à la demande depuis le menu du classeur.
 - Documentation d’architecture détaillée dans `context-kizeo.md`.
@@ -12,18 +13,33 @@
 - ScriptProperties `BQ_PROJECT_ID`, `BQ_DATASET`, `BQ_LOCATION` configurées côté Apps Script.
 - Secrets (token Kizeo, IDs de formulaires, etc.) stockés hors dépôt.
 
+### Gestion des secrets
+- **Token Kizeo**
+  1. Ouvrir le classeur dédié au stockage du token (`token`!A1) et récupérer un nouveau jeton depuis Kizeo.
+  2. Remplacer la valeur de la cellule `A1`, puis enregistrer le classeur.
+  3. Depuis l’éditeur Apps Script de la librairie (`lib/`), exécuter `cacheResetKizeoToken()` (ou `clasp run cacheResetKizeoToken`) pour invalider le cache en mémoire.
+  4. Lancer `zzDescribeScenarioProcessManager` ou `main` afin de vérifier que l’authentification se fait avec le nouveau token.
+  5. Consigner la rotation dans la documentation interne / coffre-fort d’équipe.
+- **ScriptProperties BigQuery (`BQ_PROJECT_ID`, `BQ_DATASET`, `BQ_LOCATION`)**
+  1. Dans Apps Script → **Project Settings**, mettre à jour les propriétés avec les valeurs cibles.
+  2. Option alternative : exécuter `setBigQueryConfig({ projectId, datasetId, location })` via `clasp run`.
+  3. Utiliser la fonction `initBigQueryConfigFromSheet` (menu Configuration Kizeo) pour propager et contrôler les valeurs depuis la feuille.
+  4. Vérifier immédiatement la configuration avec `zzDescribeScenarioSheetInterface` ou `runBigQueryDeduplication`.
+  5. Documenter toute déviation (ex. dataset temporaire) dans l’onglet `Config` du classeur et dans `docs/test-runs.md`.
+
 ## Organisation du dépôt
 ```
 .
-├── lib/                # Bibliothèque Apps Script (libKizeo)
-│   ├── BigQuery.js     # Ingestion, audit et déduplication BigQuery
-│   ├── APIHandler.js   # Appels Kizeo (UrlFetch)
-│   ├── Outils.js       # Config formulaire, helpers feuille principale
-│   ├── Tableaux.js     # Gestion des sous-formulaires & onglets dédiés
-│   ├── Images.js       # Téléchargement et archivage des médias Drive
-│   ├── ListesExternes.js # Synchronisation des listes externes Kizeo
-│   ├── zz_Tests.js     # Scénarios exploratoires ou de test manuel
-│   └── appsscript.json # Manifest Apps Script de la librairie
+├── lib/                # Bibliothèque Apps Script (fonctions exposées globalement)
+│   ├── bigquery/ingestion.js   # Ingestion, audit et déduplication BigQuery
+│   ├── process/             # Orchestration (ingestBigQueryPayloads, external lists…)
+│   ├── APIHandler.js        # Appels Kizeo (UrlFetch)
+│   ├── KizeoClient.js       # Client HTTP Kizeo (cache token, gestion erreurs)
+│   ├── DriveMediaService.js # Téléchargement médias Drive + caches
+│   ├── ListesExternes.js    # Synchronisation des listes externes Kizeo
+│   ├── Outils.js            # Config formulaire, helpers feuille principale
+│   ├── zz_Tests.js          # Scénarios exploratoires ou de test manuel
+│   └── appsscript.json      # Manifest Apps Script de la librairie
 ├── sheetInterface/     # Script lié au classeur et assets HtmlService
 │   ├── Code.js         # Menus, triggers, orchestrateur `main`
 │   ├── UI.js           # Logique UI (modales, sélection formulaire)
@@ -36,6 +52,21 @@
 ```
 
 ## Flux de travail
+### Fonctions publiques principales
+Les principaux points d’entrée exposés dans l’espace global Apps Script sont :
+
+| Fonction | Localisation | Description |
+|----------|-------------|-------------|
+| `processData(spreadsheet, formulaire, action, limit, options)` | `lib/ProcessManager.js` | Récupère les réponses Kizeo non lues, ingère BigQuery, synchronise les listes externes et renvoie un résumé (médias, dernier enregistrement, statistiques). |
+| `handleResponses(...)` | `lib/ProcessManager.js` | Variante bas niveau utilisée par `processData` et les scénarios tests. |
+| `requeteAPIDonnees(method, path, payload)` | `lib/KizeoClient.js` | Wrapper UrlFetch avec cache token et gestion des erreurs structurée. |
+| `ensureBigQueryCoreTables()` / `bqRunDeduplicationForForm(formulaire)` | `lib/bigquery/ingestion.js` | Prépare les tables cibles et pilote la déduplication. |
+| `FormResponseSnapshot.buildRowSnapshot(...)` | `lib/FormResponseSnapshot.js` | Produit le snapshot utilisé par l’ingestion et les listes externes (headers + ligne + médias). |
+| `ExternalListsService.updateFromSnapshot(...)` | `lib/ExternalListsService.js` | Met à jour les listes externes Kizeo à partir d’un snapshot. |
+| `DriveMediaService.getDefault().saveBlobToFolder(blob, folderId, fileName)` | `lib/DriveMediaService.js` | Sauvegarde un export ou média dans Drive avec gestion de la duplication. |
+
+Les scripts liés (`sheetInterface/`, `MAJ Listes Externes/`) appellent directement ces fonctions globales. Pensez à `clasp push` la librairie avant d’exécuter les scripts consommateurs.
+
 ### Bibliothèque (`lib/`)
 1. `cd lib`
 2. `clasp pull` pour récupérer l’état distant.
@@ -50,7 +81,7 @@
 4. Entrées disponibles : sélection du formulaire, actualisation BigQuery, déduplication forcée, configuration des déclencheurs.
 
 ## Déduplication BigQuery
-- `lib/BigQuery.js` fournit `bqRunDeduplicationForForm` qui nettoie table parent + sous-tables (restitution des stats et des erreurs).
+- `lib/bigquery/ingestion.js` fournit `bqRunDeduplicationForForm` qui nettoie table parent + sous-tables (restitution des stats et des erreurs).
 - Côté sheet, `runBigQueryDeduplication` vérifie l’état du script (`etatExecution`), valide la configuration, puis délègue à la bibliothèque.
 - `ensureDeduplicationTrigger` crée un déclencheur horaire dédié (`runBigQueryDeduplication`) et cohabite avec le déclencheur principal `main`.
 - Menu “Forcer la déduplication BigQuery” permet un lancement manuel avec feedback détaillé.
@@ -63,10 +94,16 @@
 - Exemple : `clasp run bqBackfillForm --params '["1018296", {"startDate":"2024-01-01","endDate":"2024-01-31","chunkSize":50}]'`
 - Les scénarios manuels sont documentés dans `lib/zz_Tests.js` (`zzDescribeScenarioBackfillMinimal`).
 
-## Tests manuels
-- Aucun runner automatique : utiliser `zz_Tests.js` ou `sheetInterface/ZZ_tests.js` pour ajouter des scénarios `zzDescribeScenario()`.
+## Tests
+
+### Tests automatisés
+- `node tests/run-tests.js` (vérifie les intégrations clés : `FormResponseSnapshot`, `createIngestionServices`, `collectResponseArtifacts`).
+
+### Tests manuels
+- Utiliser `zz_Tests.js` ou `sheetInterface/ZZ_tests.js` pour ajouter des scénarios `zzDescribeScenario()`.
 - Exécution distante via `clasp run zzDescribeScenario` après mise à jour (`clasp push`).
 - Vérifications attendues : écriture BigQuery (`BigQuery.Tables.list`), mutations Sheets et exports Drive.
+- Trois scénarios sont à compléter pour valider la refonte : `zzDescribeScenarioProcessManager`, `zzDescribeScenarioSheetInterface`, `zzDescribeScenarioMajListesExternes`.
 
 ## Dépannage
 - **Script bloqué (`etatExecution = 'enCours'`)** : exécuter la fonction `setScriptPropertiesTermine()` depuis l’éditeur Apps Script ou lancer `clasp run setScriptPropertiesTermine`. Elle délègue à `setScriptProperties('termine')` et libère le verrou manuel sans toucher aux autres propriétés.

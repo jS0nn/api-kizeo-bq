@@ -2,7 +2,7 @@
 
 ## 1. Constat actuel
 
-- **Monolithique** : la majorité des fonctions vivent dans `lib/0_Data.js` et `lib/BigQuery.js`.
+- **Monolithique** : la majorité des fonctions vivent dans `lib/0_Data.js` et `lib/bigquery/ingestion.js`.
 - **Couplage fort** : `processData` orchestre des responsabilités hétérogènes (récupération API, ingestion BQ, gestion médias, fallback Sheets, listes externes).
 - **Tests** : la nouvelle suite `runAllTests` couvre de nombreux cas mais nécessite encore des mocks complexes faute de séparation claire.
 
@@ -10,37 +10,31 @@
 
 ### Statut au 30/10/2025
 - ✅ `api` : `lib/KizeoClient.js` opérationnel, `lib/APIHandler.js` agit en wrapper de compatibilité.
-- ✅ `ingest` : `lib/BigQueryService.js` expose toutes les primitives (ensure/ingest/audit/dedup).
-- ✅ `legacy` : `lib/SheetSnapshot.js` regroupe la logique Sheets/Drive, wrappers conservés.
+- ✅ `ingest` : `lib/bigquery/ingestion.js` expose toutes les primitives (ensure/ingest/audit/dedup) consommées via `createIngestionServices()`.
+- ✅ `media` : `lib/DriveMediaService.js` centralise le traitement Drive (processField, saveBlobToFolder, caches).
 - ✅ `orchestration` : `lib/ProcessManager.js` regroupe `processData`, `handleResponses` et la collecte d’artefacts.
-- ⏳ `media` : découplage Drive optionnel (actuellement géré dans `lib/Images.js`).
 - ✅ `sync` : `lib/ListesExternes.js` reste autonome.
-- ✅ `external-lists` : script “MAJ Listes Externes” documenté, consomme les nouveaux services.
+- ✅ `external-lists` : script “MAJ Listes Externes” documenté, consomme les services exposés (`processData`, `ExternalListsService`).
 
 | Module | Fichier(s) suggérés | Responsabilité principale |
 |--------|--------------------|----------------------------|
 | `api` | `lib/KizeoClient.js`, `lib/APIHandler.js` (wrapper) | Communication Kizeo (HTTP, token, retries) |
-| `ingest` | `lib/BigQuery.js`, `lib/0_Data.ingest*` | Préparation et écriture BigQuery (raw, parent, sous-formes, médias, audit) |
-| `legacy` | `lib/SheetSnapshot.js`, `lib/Tableaux.js` (isolé) | Fonctions Sheets/Drive héritées (activation conditionnelle) |
-| `media` | `lib/Images.js` | Gestion Drive des médias (downloading, stockage) |
+| `ingest` | `lib/bigquery/ingestion.js`, `lib/0_Data.ingest*` | Préparation et écriture BigQuery (raw, parent, sous-formes, médias, audit) |
+| `media` | `lib/DriveMediaService.js` | Gestion Drive des médias (downloading, stockage) |
 | `orchestration` | `lib/ProcessManager.js` (nouveau) | `processData`, `handleResponses`, triggers, gestion des erreurs |
 | `sync` | `lib/ListesExternes.js` | Mise à jour listes externes / autres systèmes |
 | `external-lists` (script dédié) | `lib/ListesExternes.js` (expose `ExternalListsService`), `MAJ Listes Externes/*` | Synchronisation listes Kizeo (`updateFromSnapshot`), UI Google Sheets + exports Drive spécifiques (autonome, consomme `processData` et `buildRowSnapshot`). |
 
 ## 3. Étapes recommandées
 
-1. **Isoler l’API Kizeo**
-   - Déplacer `requeteAPIDonnees` + helpers token dans `api/KizeoClient.js`.
-   - Exposer une interface (`fetch({ method, path, payload })`) testable indépendamment.
+1. **Isoler l’API Kizeo** *(fait)*
+   - `lib/KizeoClient.js` fournit désormais l’unique point d’accès HTTP (token cache, retries).
 
-2. **Créer un module `ingest/BigQueryService`**
-   - Rassembler `bqIngest*`, `bqEnsure*`, `bqRecordAudit`.
-   - Injecter le service dans `processData` via `createIngestionServices()`.
-   - Simplifier les tests en mockant uniquement ce service.
+2. **Stabiliser l’ingestion BigQuery** *(fait)*
+   - `createIngestionServices` renvoie un objet `bigQuery` bâti à partir de `lib/bigquery/ingestion.js` (plus de wrapper `BigQueryBindings`).
 
-3. **Isoler `SheetSnapshot`** *(partiellement fait)*
-   - `lib/SheetSnapshot.js` expose `prepareDataForSheet`, `buildRowSnapshot`, `persistSnapshot`, etc., et les fonctions globales sont désormais des wrappers.
-   - Étapes restantes : retirer progressivement `lib/Tableaux.js`, déplacer la collecte médias Drive (si souhaité) et réduire les dépendances vers le code legacy.
+3. **Centraliser la gestion Drive** *(fait)*
+   - `lib/DriveMediaService.js` remplace l’ancien couple `Images.js` / `SheetSnapshot`.
 
 4. **Séparer `processData`**
    - `fetchUnreadResponses(formulaire, action, services)` → module API.
@@ -61,7 +55,7 @@
 
 ## 5. Prochaines actions
 
-1. Introduire des fichiers dédiés (`lib/KizeoClient.js`, futurs `lib/BigQueryService.js`, etc.).
-2. Déplacer `requeteAPIDonnees` + `createIngestionServices` vers ces nouvelles unités (sans changer la logique).
-3. Mettre à jour `context-kizeo.md` avec le nouveau diagramme.
-4. Ajuster les imports (`global` Apps Script) en exposant chaque module via `globalThis`.
+1. Continuer à documenter l’API publique (`processData`, `ExternalListsService`, `DriveMediaService`).
+2. Poursuivre le découpage de `processData` (ingestion vs orchestration) pour faciliter les tests unitaires.
+3. Mettre à jour `context-kizeo.md` avec le nouveau diagramme (sans legacy Sheets).
+4. Ajuster les imports (`global` Apps Script) en exposant chaque module via `globalThis` si de nouvelles unités sont introduites.

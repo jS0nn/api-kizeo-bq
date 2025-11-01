@@ -2,7 +2,7 @@
 
 ## TL;DR
 - The repository contains two Apps Script projects:
-  - `lib/`: a reusable library consumed by production spreadsheets.
+  - `lib/`: a reusable library consommée directement (fonctions globales, plus d’alias `libKizeo.*`).
   - `sheetInterface/`: a bound script for the spreadsheet along with HtmlService assets.
 - Use `clasp pull` and `clasp push` inside the appropriate subdirectory to synchronize changes with Google Apps Script.
 - Remote execution: run `clasp run main` (for the sheet) or `clasp run bqIngestParentBatch` (for the library) after pushing.
@@ -11,14 +11,16 @@
 ### État des travaux (30/10/2025)
 - **Modularisation** :
   - Client API Kizeo isolé dans `lib/KizeoClient.js` (ancien `APIHandler` inchangé pour compatibilité).
-  - Service BigQuery exposé via `lib/BigQueryService.js`.
-  - Logique Sheets legacy déplacée dans `lib/SheetSnapshot.js`; les fonctions historiques (`saveDataToSheet`, `buildRowSnapshot`, …) ne sont plus que des wrappers.
+- Service BigQuery exposé directement via `lib/bigquery/ingestion.js` (toutes les fonctions sont globales).
+  - Gestion Drive centralisée dans `lib/DriveMediaService.js`; `FormResponseSnapshot` appelle le service sans wrapper intermédiaire.
+  - Les scripts liés consomment désormais les fonctions globales (`processData`, `requeteAPIDonnees`, `ensureBigQueryCoreTables`, …) sans alias.
+  - Suppression des modules legacy `lib/Tableaux.js`, `lib/SheetSnapshot.js`, `lib/Images.js`.
 - **createIngestionServices** renvoie désormais `{ fetch, now, logger, bigQuery, snapshot }`; `processData` consomme ces services.
 - **MAJ Listes Externes** reste pleinement compatible : elle continue d’appeler `processData` et reçoit les mêmes structures (`processResult.medias`, `latestRecord`, etc.).
 - **Tests** : `runAllTests()` passe (26/26). Les tests unitaires vérifient aussi les nouveaux services (snapshot) et la gestion des erreurs simulées.
 - **Docs** :
   - `docs/legacy-deprecation-plan.md` décrit l’isolement du legacy et le cas particulier “MAJ Listes Externes”.
-  - `docs/module-refactor-roadmap.md` détaille les prochaines étapes (orchestration, refactor triggers, suppression `Tableaux.js`).
+  - `docs/module-refactor-roadmap.md` détaille les prochaines étapes (orchestration, refactor triggers, documentation secrets).
 - **En cours** : finaliser la suppression du code Sheets résiduel et poursuivre la migration de MAJ Listes Externes vers les nouveaux services lorsque nécessaire. L’orchestration a désormais son module dédié (`lib/ProcessManager.js`).
 
 ---
@@ -26,9 +28,10 @@
 ## Repository structure
 
 - `lib/` — main modules:
-  - `BigQuery.js`: BigQuery ingestion logic.
+- `bigquery/ingestion.js`: BigQuery ingestion logic.
   - `APIHandler.js`: Kizeo API calls.
-  - `Outils.js` / `Tableaux.js`: utilities for synchronising data with Sheets.
+  - `Outils.js`: utilities for synchronising data with Sheets.
+  - `DriveMediaService.js`: Drive media/download helpers (processField, saveBlobToFolder).
 - `sheetInterface/` — bound script and UI:
   - `UI.js`, `timeIntervalSelector.html`: menus, dialogs and triggers.
 - `zz_*.js` — exploratory code and manual test harnesses.

@@ -1,0 +1,41 @@
+# Journal exécutions manuelles
+
+> Consigner ici chaque campagne de test (date, scénario exécuté, résultat, observations).
+>
+> Format suggéré :
+> ```
+> ## AAAA-MM-JJ — Contexte
+> - Fonctions : `zzDescribeScenarioProcessManager`, `zzDescribeScenarioSheetInterface`, ...
+> - Résultat : ✅ / ⚠️ (détails)
+> - Observations : logs BigQuery, Drive, erreurs éventuelles
+> ```
+
+## 2025-10-30 — Scénarios de validation post-refactor
+
+- `zzDescribeScenarioProcessManager`  
+  - Résultat : ✅ `{"status":"INGESTED","metadataUpdateStatus":"SKIPPED","rowCount":1,"rawRowsCaptured":1,"parentRowsCaptured":1,"mediaCaptured":0,"subTablesCaptured":0,"markAsReadCalls":1,"logSamples":[...]}`  
+  - Observations : ingestion complète avec mocks, marquage réussi.
+
+- `zzDescribeScenarioSheetInterface`  
+  - Résultat : ✅ `{"isValid":true,"tableName":"formulaire_sc_nario_form_scenario","batchLimit":15,"availability":true}`  
+  - Observations : validation de configuration OK avec stub `bqComputeTableName`.
+
+- `zzDescribeScenarioMajListesExternes`  
+  - Résultat : ✅ `{"status":"Mise A Jour OK","putCalls":1,"samplePayload":{"items":["id:id|champ:champ","rec-000:rec-000|Valeur mise à jour:Valeur mise à jour"]}}`  
+  - Observations : scénario exécuté via l’éditeur Apps Script, `ExternalListsService.updateFromSnapshot` appelé directement (plus d’alias `libKizeo`).
+
+## 2025-10-30 — Validation post-push (suppression legacy Sheets)
+- Fonctions : `zzDescribeScenarioProcessManager`, `zzDescribeScenarioSheetInterface`, `zzDescribeScenarioMajListesExternes`.
+- Résultat :
+  - ✅ `zzDescribeScenarioProcessManager` — `{"status":"INGESTED","metadataUpdateStatus":"SKIPPED","rowCount":1,"rawRowsCaptured":1,"parentRowsCaptured":1,"mediaCaptured":0,"subTablesCaptured":0,"markAsReadCalls":1,...}`
+  - ✅ `zzDescribeScenarioSheetInterface` — `{"isValid":true,"tableName":"form_scenario__form_scenario","batchLimit":15,"availability":true}`
+  - ✅ `zzDescribeScenarioMajListesExternes` — `{"status":"Mise A Jour OK","putCalls":1,"samplePayload":{"items":["id:id|champ:champ","rec-000:rec-000|Valeur mise à jour:Valeur mise à jour"]}}`
+- Observations :
+  - Logs ProcessManager sans références legacy ; sérialisation JSON dérivée de `FormResponseSnapshot`.
+  - Nom de table BigQuery `form_scenario__form_scenario` validé dans le scénario SheetInterface.
+  - Listes externes : payload identique, pas d’erreur `ExternalListsService`.
+
+## 2025-10-31 — Harmonisation appels libKizeo
+- Fonctions : `node tests/run-tests.js`.
+- Résultat : ✅ `Tous les tests sont passés.` (vérifie `DriveMediaService`, `createIngestionServices`, `collectResponseArtifacts` sans dépendance legacy).
+- Observations : scripts `sheetInterface` et `MAJ Listes Externes` appellent désormais la librairie via `libKizeo.*` ; suppression des alias globaux `00_libGlobals.js`.

@@ -1,97 +1,32 @@
-# Legacy Sheets & Drive – Plan de décommissionnement
+# Legacy Sheets & Drive – État final (octobre 2025)
 
-## 1. État des lieux
+Tous les composants hérités liés à la persistance Google Sheets ont été retirés de la bibliothèque Apps Script.
 
-| Zone | Fonctions marquées `@deprecated` | Utilisation actuelle (octobre 2025) |
-|------|----------------------------------|-------------------------------------|
-| `lib/0_Data.js` | `saveDataToSheet`, `prepareDataForSheet`, `prepareDataToRowFormat`, `prepareSheet`, `getColumnIndices` | - `saveDataToSheet` n’est plus appellée.<br>- `prepareDataForSheet` reste utilisée par `buildRowSnapshot` pour produire un résumé structuré (métadonnées + médias) avant la synchro listes externes. |
-| `lib/Tableaux.js` | `gestionTableaux`, `getOrCreateSheet`, `getOrCreateHeaders`, `getNewHeaders`, `createNewRows`, `appendRowsToSheet`, `createHyperlinkToSheet` | Plus aucun appel direct : ces utilitaires ne sont plus référencés depuis le flux principal (ils étaient déclenchés via `saveDataToSheet`). |
-| `lib/Images.js` | Code principal non déprécié mais fortement couplé à l’ancien flux Sheets | Toujours invoqué depuis `buildRowSnapshot` pour conserver les médias sur Drive. |
+## 1. Résumé
 
-Instrumentation ajoutée :
-- `recordLegacyUsage()` marque chaque passage dans une fonction historique (`LEGACY_USAGE_*` dans les `DocumentProperties`).
-- `logLegacyUsageStats()` (Apps Script global) affiche les temps de dernier passage et le nombre total de marqueurs.
+| Zone | Statut | Commentaire |
+|------|--------|-------------|
+| `lib/0_Data.js` | ✅ Nettoyé | Suppression des wrappers (`saveDataToSheet`, `prepareDataForSheet`, etc.) et de l’instrumentation (`recordLegacyUsage`, `logLegacyUsageStats`). `createIngestionServices` délègue directement à `FormResponseSnapshot` et `DriveMediaService`. |
+| `lib/Tableaux.js` | ✅ Supprimé | Plus de persistance Sheets secondaire ; les sous-formulaires sont sérialisés via `FormResponseSnapshot`. |
+| `lib/SheetSnapshot.js` | ✅ Supprimé | Fonctionnalités fusionnées dans `FormResponseSnapshot`. |
+| `lib/Images.js` | ✅ Supprimé | Remplacé par `lib/DriveMediaService.js` (gestion Drive centralisée). |
+| Alias `libKizeo` | ✅ Déprécié | Les scripts consommateurs appellent désormais les fonctions globales (`processData`, `requeteAPIDonnees`, `bqComputeTableName`, …) sans wrapper. |
 
-## 2. Observations
+## 2. Architecture actuelle
 
-1. **`saveDataToSheet` & `lib/Tableaux.js`** : la persistance Sheets est désormais désactivée en dur ; l’instrumentation confirme l’absence d’appels. Ces fonctions sont donc candidates à la suppression pure et simple une fois la période de monitoring terminée.
-2. **`prepareDataForSheet` & co.** : toujours nécessaires pour construire les snapshots destinés à :
-   - l’update des listes externes (`runExternalListsSync`),
-   - la collecte des médias Drive (`buildRowSnapshot`),
-   - les rapports UI (ex. export manuel).
-   Ces fonctions résident désormais dans `lib/FormResponseSnapshot.js`, indépendant de `SheetSnapshot`.
-3. **`lib/Images.js`** : la logique Drive est volontaire. BigQuery ne stocke que les métadonnées (`drive_file_id`, URLs, dossier). La suppression du traitement Drive n’est pas souhaitée : les utilisateurs consomment toujours les médias via Drive/Looker.
-4. **Instrumentation `SheetSnapshot` (oct. 2025)** : les appels legacy enregistrent désormais `prepare_data_for_sheet`, `prepare_sheet`, `get_column_indices`, `prepare_data_to_row_format`, `build_row_snapshot`, `tableaux_call`, `tableaux_fallback_json`, `persist_snapshot` et `saveDataToSheet`. Si `gestionTableaux` est absent, le sous-formulaire est sérialisé en JSON et consigné dans les logs (`legacy:SheetSnapshot`). Cette garde garantit que la suppression de `lib/Tableaux.js` n’interrompt pas l’ingestion.
-5. **`SheetSnapshot`** : ne conserve plus que les wrappers legacy (persistance Sheets). Toute la logique snapshot utile aux listes externes vit dans `lib/FormResponseSnapshot.js`.
+- Les snapshots (headers + row + médias + sous-formulaires) sont produits par `FormResponseSnapshot.buildRowSnapshot` et consommés par `processData` / `ExternalListsService`.
+- `DriveMediaService.getDefault()` fournit `processField`, `saveBlobToFolder`, `normalizeDrivePublicUrl`, `getOrCreateFolder`, etc. – plus aucun wrapper `gestionChampImage`.
+- `ProcessManager.collectResponseArtifacts` ne connaît plus de mode « legacy Sheets » : la sortie `lastSnapshot` provient directement de `FormResponseSnapshot`.
+- `MAJ Listes Externes` et `sheetInterface` utilisent les mêmes primitives (`processData`, `runExternalListsSync`, `DriveMediaService`) sans alias `libKizeo`.
 
-## 3. Plan de retrait
+## 3. Actions restantes
 
-### Étape 1 — Observation (en cours)
-1. Déployer le script et laisser tourner les déclencheurs de production pendant ≥ 2 semaines.
-2. Exécuter ponctuellement `logLegacyUsageStats()` (via `clasp run logLegacyUsageStats` ou l’éditeur Apps Script) pour vérifier l’absence d’entrées récentes :
-   ```bash
-   clasp run logLegacyUsageStats
-   ```
-   - Retour `0` => aucune fonction legacy utilisée depuis la dernière purge.
-   - Retour `>0` => investiguer les usages résiduels (vérifier les `DocumentProperties` ou les logs).
+- Surveiller ponctuellement les scénarios `zzDescribeScenario*` (ingestion, listes externes, exports Drive) et consigner les exécutions dans `docs/test-runs.md`.
+- Poursuivre la documentation de l’API publique (`processData`, `ExternalListsService`, `DriveMediaService`) et des procédures (rotation token Kizeo, mise à jour ScriptProperties BigQuery).
+- Supprimer, le cas échéant, les anciennes clés `LEGACY_USAGE_*` dans les `DocumentProperties` si elles existent encore dans les environnements historiques.
 
-### Étape 2 — Isolation
-1. Déplacer les fonctions encore utiles (`prepareDataForSheet`, `getDataFromFields`, etc.) dans un module dédié (`lib/SheetSnapshot.js`). *(fait)*
-2. Extraire `buildRowSnapshot` pour qu’il dépende uniquement de ce module, en supprimant les références directes à `saveDataToSheet`.
-3. (Optionnel) Marquer le module d’un flag `ENABLE_LEGACY_SNAPSHOT` si besoin — le flag historique `ENABLE_LEGACY_SHEETS_SYNC` est désormais ignoré.
- 4. Retirer les helpers Sheets obsolètes (`ensureFormActionCode`, `upsertFormConfig`) afin de réduire la surface legacy. *(fait)*
+## 4. Notes pratiques
 
-### Étape 3 — Suppression
-1. Supprimer `saveDataToSheet` et tout `lib/Tableaux.js` après validation des points ci-dessus.
-   - Grâce à `tableaux_fallback_json`, la migration pourra se faire même si des scripts annexes n’embarquent plus `lib/Tableaux.js`.
-2. Effacer les clés `LEGACY_USAGE_*` des `DocumentProperties` et retirer `recordLegacyUsage`.
-3. Documenter le changement dans `context-kizeo.md` et le changelog du projet.
-
-## 4. Médias Drive (`lib/Images.js`)
-
-### Rappel fonctionnel
-- Chaque média reste stocké sur Drive (dans le dossier `Images <formId>`).
-- BigQuery reçoit exclusivement :
-  - `drive_file_id`, `drive_public_url`, `folder_id`, `folder_url`, etc.
-  - Les valeurs sont utilisées par Looker Studio et les exports internes.
-
-### Actions recommandées
-1. **Documentation** :
-   - Mentionner dans le README / AGENTS que l’hébergement Drive est contractuel (besoin de lien public, quotas Kizeo).
-   - Préciser les impacts RGPD : les métadonnées sont conservées côté BQ, les fichiers peuvent être supprimés via Drive si nécessaire.
-2. **Surveillance** :
-   - Ajouter un script périodique (optionnel) pour vérifier la cohérence Drive ↔ BigQuery (ex. présence du fichier, droits).
-3. **Option long terme** :
-- Étudier la migration vers Cloud Storage + Signed URLs si la DSI demande une solution hors Drive.
-
-## 5. Cas particulier : projet « MAJ Listes Externes »
-
-Le répertoire `MAJ Listes Externes/` contient un script dédié à la maintenance des listes externes Kizeo (synchronisation Sheets ↔ listes). Il fonctionne indépendamment de l’ingestion BigQuery et s’appuie largement sur des écritures directes dans Sheets :
-
-- Lecture/écriture de la feuille de configuration (`Config`) du classeur dédié.
-- Génération des menus UI (`MAJ Listes Externes/UI.js`) et des dialogues HTML.
-- Traitement des listes externes via `majListeExterne` et `requeteAPIDonneesExport` (répertoire voisin `lib/`).
-- Appel direct à `libKizeo.processData` qui fournit un `processResult` compatible (`rowCount`, `runTimestamp`, `latestRecord`, `medias`, `status`) et repose sur `buildRowSnapshot` pour collecter les médias Drive nécessaires aux exports.
-
-Ce projet est volontairement **séparé du flux BigQuery** :
-
-- Il ne doit **pas** être décommissionné avec `saveDataToSheet`/`Tableaux.js` tant que les listes externes sont gérées via ce fichier.
-- Les helpers nouveaux (`logLegacyUsageStats`, instrumentation legacy) peuvent être réutilisés pour surveiller ses fonctions, mais il faut conserver les écritures Sheets dans ce contexte.
-- Lors du refactoring modulaire, prévoir un module distinct `external-lists/` ou conserver le projet comme script autonome documenté.
-
-## 6. Prochaines étapes
-
-| Étape | Owner | Deadline | Notes |
-|-------|-------|----------|-------|
-| Observer `LEGACY_USAGE_*` via `logLegacyUsageStats()` | Ops | déc-2025 | Cibler 0 utilisation avant retrait. |
-| ✅ Extraire l’orchestration (`ProcessManager`) | Dev | oct-2025 | `processData` et `handleResponses` vivent dans `lib/ProcessManager.js`, les wrappers legacy restent disponibles. |
-| Mettre à jour la doc (README / AGENTS) sur le stockage Drive | Dev | nov-2025 | Inclure les risques et modes opératoires. |
-| Décider suppression finale du code Sheets (`Tableaux.js`) | Équipe projet | fév-2026 | Si aucun usage legacy recensé. |
-| Documenter la séparation `MAJ Listes Externes` vs ingestion BQ | Dev | nov-2025 | Réaffirmer que les listes externes restent gérées côté Sheets. |
-
-## 6. Audit legacy (Q4 2025)
-
-- Dresser l’inventaire des helpers réellement utilisés dans `lib/ListesExternes.js` et `lib/Images.js`, en les classant par usage (ingestion vs. export listes externes).
-- Mettre en évidence, dans le projet **MAJ Listes Externes/**, les points d’entrée qui dépendent encore du legacy (`buildRowSnapshot`, traitements Drive) pour préparer leur isolation.
-- Identifier les fonctions candidates à la suppression ou au déplacement dans un module dédié « legacy external lists », avec un plan de migration ou de refactor léger.
-- Référence : [docs/legacy-external-lists-audit.md](legacy-external-lists-audit.md) pour la synthèse des dépendances.
+- **Exports Drive** : `DriveMediaService.saveBlobToFolder` réutilise les fichiers existants (déduplication par nom). En cas d’erreur, `handleException` journalise et les scénarios `zzDescribeScenario` permettent de reproduire.
+- **Listes externes** : `ExternalListsService.updateFromSnapshot` reste la porte d’entrée, alimentée par le snapshot renvoyé par `processData` / `FormResponseSnapshot`.
+- **BigQuery** : les tables parent/sous-formulaires/médias sont toujours préparées via `bqEnsure*`. La suppression du legacy Sheets n’affecte pas la structure BQ.
