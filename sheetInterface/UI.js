@@ -1,34 +1,36 @@
-var resolveSheetUiSymbol =
-  typeof requireSheetSymbol === 'function'
-    ? requireSheetSymbol
-    : function (symbolName) {
-        if (typeof sheetBootstrap !== 'undefined' && sheetBootstrap) {
-          if (typeof sheetBootstrap.require === 'function') {
-            return sheetBootstrap.require(symbolName);
-          }
-          if (typeof sheetBootstrap.requireMany === 'function') {
-            var resolved = sheetBootstrap.requireMany([symbolName]);
-            if (resolved && Object.prototype.hasOwnProperty.call(resolved, symbolName)) {
-              return resolved[symbolName];
-            }
-          }
-        }
-        if (typeof libKizeo === 'undefined' || libKizeo === null) {
-          throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
-        }
-        var value = libKizeo[symbolName];
-        if (value === undefined || value === null) {
-          throw new Error('libKizeo.' + symbolName + ' indisponible');
-        }
-        return value;
-      };
+if (typeof libKizeo === 'undefined' || libKizeo === null) {
+  throw new Error('libKizeo indisponible (sheetInterface/UI)');
+}
 
-var reportException = resolveSheetUiSymbol('handleException');
-var fetchKizeo = resolveSheetUiSymbol('requeteAPIDonnees');
-var computeTableName = resolveSheetUiSymbol('bqComputeTableName');
-var sheetInterfaceHelpers = resolveSheetUiSymbol('SheetInterfaceHelpers');
-var gestionFeuilles = resolveSheetUiSymbol('gestionFeuilles');
-var ensureBigQueryCoreTables = resolveSheetUiSymbol('ensureBigQueryCoreTables');
+var reportException = libKizeo.handleException;
+if (typeof reportException !== 'function') {
+  throw new Error('handleException indisponible via libKizeo');
+}
+
+var fetchKizeo = libKizeo.requeteAPIDonnees;
+if (typeof fetchKizeo !== 'function') {
+  throw new Error('requeteAPIDonnees indisponible via libKizeo');
+}
+
+var computeTableName = libKizeo.bqComputeTableName;
+if (typeof computeTableName !== 'function') {
+  throw new Error('bqComputeTableName indisponible via libKizeo');
+}
+
+var sheetInterfaceHelpers = libKizeo.SheetInterfaceHelpers || null;
+if (!sheetInterfaceHelpers) {
+  throw new Error('SheetInterfaceHelpers indisponible via libKizeo');
+}
+
+var gestionFeuilles = libKizeo.gestionFeuilles;
+if (typeof gestionFeuilles !== 'function') {
+  throw new Error('gestionFeuilles indisponible via libKizeo');
+}
+
+var ensureBigQueryCoreTables = libKizeo.ensureBigQueryCoreTables;
+if (typeof ensureBigQueryCoreTables !== 'function') {
+  throw new Error('ensureBigQueryCoreTables indisponible via libKizeo');
+}
 
 /**
  * Crée un menu personnalisé dans la feuille de calcul active et ajoute des éléments avec des actions correspondantes.

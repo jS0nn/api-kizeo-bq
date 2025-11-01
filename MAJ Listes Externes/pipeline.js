@@ -4,38 +4,44 @@ var majPipeline =
   typeof majPipeline !== 'undefined'
     ? majPipeline
     : (function () {
-        function resolveSymbol(symbolName) {
-          if (typeof requireMajSymbol === 'function') {
-            return requireMajSymbol(symbolName);
-          }
-          if (typeof majBootstrap !== 'undefined' && majBootstrap) {
-            if (typeof majBootstrap.require === 'function') {
-              return majBootstrap.require(symbolName);
-            }
-            if (typeof majBootstrap.requireMany === 'function') {
-              var resolved = majBootstrap.requireMany([symbolName]);
-              if (resolved && Object.prototype.hasOwnProperty.call(resolved, symbolName)) {
-                return resolved[symbolName];
-              }
-            }
-          }
-          if (typeof libKizeo === 'undefined' || libKizeo === null) {
-            throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
-          }
-          var value = libKizeo[symbolName];
-          if (value === undefined || value === null) {
-            throw new Error('libKizeo.' + symbolName + ' indisponible');
-          }
-          return value;
+        if (typeof libKizeo === 'undefined' || libKizeo === null) {
+          throw new Error('libKizeo indisponible (MAJ Listes Externes/pipeline)');
         }
 
-        var reportException = resolveSymbol('handleException');
-        var ingestProcessData = resolveSymbol('processData');
-        var sheetInterfaceHelpers = resolveSymbol('SheetInterfaceHelpers');
-        var extractAliasPart = resolveSymbol('bqExtractAliasPart');
-        var runDeduplication = resolveSymbol('bqRunDeduplicationForForm');
-        var initBigQueryConfig = resolveSymbol('initBigQueryConfig');
-        var ensureBigQueryCoreTables = resolveSymbol('ensureBigQueryCoreTables');
+        var reportException = libKizeo.handleException;
+        if (typeof reportException !== 'function') {
+          throw new Error('handleException indisponible via libKizeo');
+        }
+
+        var ingestProcessData = libKizeo.processData;
+        if (typeof ingestProcessData !== 'function') {
+          throw new Error('processData indisponible via libKizeo');
+        }
+
+        var sheetInterfaceHelpers = libKizeo.SheetInterfaceHelpers || null;
+        if (!sheetInterfaceHelpers) {
+          throw new Error('SheetInterfaceHelpers indisponible via libKizeo');
+        }
+
+        var extractAliasPart = libKizeo.bqExtractAliasPart;
+        if (typeof extractAliasPart !== 'function') {
+          throw new Error('bqExtractAliasPart indisponible via libKizeo');
+        }
+
+        var runDeduplication = libKizeo.bqRunDeduplicationForForm;
+        if (typeof runDeduplication !== 'function') {
+          throw new Error('bqRunDeduplicationForForm indisponible via libKizeo');
+        }
+
+        var initBigQueryConfig = libKizeo.initBigQueryConfig;
+        if (typeof initBigQueryConfig !== 'function') {
+          throw new Error('initBigQueryConfig indisponible via libKizeo');
+        }
+
+        var ensureBigQueryCoreTables = libKizeo.ensureBigQueryCoreTables;
+        if (typeof ensureBigQueryCoreTables !== 'function') {
+          throw new Error('ensureBigQueryCoreTables indisponible via libKizeo');
+        }
 
         function onOpen() {
           afficheMenu();
@@ -125,7 +131,7 @@ var majPipeline =
               ', latestRecord=' +
               (lastRecord && lastRecord.data_id ? lastRecord.data_id : 'aucun')
           );
-          if (sheetInterfaceHelpers && summary.metadataUpdateStatus === 'UPDATED') {
+          if (sheetInterfaceHelpers) {
             try {
               sheetInterfaceHelpers.persistExecutionMetadata({
                 sheet: context.sheet,
@@ -233,20 +239,23 @@ var majPipeline =
               setScriptProperties('termine');
               return;
             }
-            var services = resolveSymbol('createIngestionServices')({
+            var services = libKizeo.createIngestionServices({
               logger: console
             });
-            var summary = ingestProcessData({
-              formulaire: formulaire,
-              config: context.config,
-              spreadsheet: spreadsheetBdD,
-              services: services,
-              runOptions: {
-                ingestBigQuery: ingestFlag !== 'false',
-                batchLimit: majConfig.getConfiguredBatchLimit(context.config),
-                origin: origin
+            var batchLimit = majConfig.getConfiguredBatchLimit(context.config);
+            var summary = ingestProcessData(
+              spreadsheetBdD,
+              formulaire,
+              validation.config.action,
+              batchLimit,
+              {
+                services: services,
+                targets: {
+                  bigQuery: ingestFlag !== 'false',
+                  externalLists: true
+                }
               }
-            });
+            );
             handleProcessSummary(formulaire, context, summary, runStart, ingestFlag);
           } catch (error) {
             reportException('main', error, { origin: origin });

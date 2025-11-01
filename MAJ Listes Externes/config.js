@@ -4,6 +4,10 @@ var majConfig =
   typeof majConfig !== 'undefined'
     ? majConfig
     : (function () {
+        if (typeof libKizeo === 'undefined' || libKizeo === null) {
+          throw new Error('libKizeo indisponible (MAJ Listes Externes/config)');
+        }
+
         var DEFAULT_KIZEO_BATCH_LIMIT = 30;
         var CONFIG_BATCH_LIMIT_KEY = 'batch_limit';
         var CONFIG_INGEST_BIGQUERY_KEY = 'ingest_bigquery';
@@ -25,33 +29,20 @@ var majConfig =
         var REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'action'];
         var MAX_BQ_TABLE_NAME_LENGTH = 128;
 
-        function resolveSymbol(symbolName) {
-          if (typeof requireMajSymbol === 'function') {
-            return requireMajSymbol(symbolName);
-          }
-          if (typeof majBootstrap !== 'undefined' && majBootstrap) {
-            if (typeof majBootstrap.require === 'function') {
-              return majBootstrap.require(symbolName);
-            }
-            if (typeof majBootstrap.requireMany === 'function') {
-              var resolved = majBootstrap.requireMany([symbolName]);
-              if (resolved && Object.prototype.hasOwnProperty.call(resolved, symbolName)) {
-                return resolved[symbolName];
-              }
-            }
-          }
-          if (typeof libKizeo === 'undefined' || libKizeo === null) {
-            throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
-          }
-          var value = libKizeo[symbolName];
-          if (value === undefined || value === null) {
-            throw new Error('libKizeo.' + symbolName + ' indisponible');
-          }
-          return value;
+        var sheetInterfaceHelpers = libKizeo.SheetInterfaceHelpers || null;
+        if (!sheetInterfaceHelpers) {
+          throw new Error('SheetInterfaceHelpers indisponible via libKizeo');
         }
 
-        var sheetInterfaceHelpers = resolveSymbol('SheetInterfaceHelpers');
-        var sheetConfigHelpers = resolveSymbol('SheetConfigHelpers');
+        var sheetConfigHelpers = libKizeo.SheetConfigHelpers || null;
+        if (!sheetConfigHelpers || typeof sheetConfigHelpers.create !== 'function') {
+          throw new Error('SheetConfigHelpers indisponible via libKizeo');
+        }
+
+        var computeTableNameFromLib = libKizeo.bqComputeTableName;
+        if (typeof computeTableNameFromLib !== 'function') {
+          throw new Error('bqComputeTableName indisponible via libKizeo');
+        }
 
         function sanitizeBatchLimitValue(raw) {
           if (raw === null || raw === undefined) return null;
@@ -106,8 +97,7 @@ var majConfig =
           sanitizeBooleanFlag: sanitizeBooleanConfigFlag,
           getConfiguredBatchLimit: getConfiguredBatchLimit,
           computeTableName: function (formId, formName, candidate) {
-            var computeTableNameFn = resolveSymbol('bqComputeTableName');
-            return computeTableNameFn(formId, formName, candidate);
+            return computeTableNameFromLib(formId, formName, candidate);
           },
           maxTableNameLength: MAX_BQ_TABLE_NAME_LENGTH,
           applyLayout: function (sheet, rowCount, rowIndexMap) {
@@ -158,6 +148,7 @@ var majConfig =
           CONFIG_INGEST_BIGQUERY_KEY: CONFIG_INGEST_BIGQUERY_KEY,
           CONFIG_HEADERS: CONFIG_HEADERS,
           REQUIRED_CONFIG_KEYS: REQUIRED_CONFIG_KEYS,
+          MAX_BQ_TABLE_NAME_LENGTH: MAX_BQ_TABLE_NAME_LENGTH,
           sanitizeBatchLimitValue: sanitizeBatchLimitValue,
           getConfiguredBatchLimit: getConfiguredBatchLimit,
           sanitizeBooleanConfigFlag: sanitizeBooleanConfigFlag,
@@ -178,3 +169,4 @@ var CONFIG_BATCH_LIMIT_KEY = majConfig.CONFIG_BATCH_LIMIT_KEY;
 var CONFIG_INGEST_BIGQUERY_KEY = majConfig.CONFIG_INGEST_BIGQUERY_KEY;
 var CONFIG_HEADERS = majConfig.CONFIG_HEADERS;
 var REQUIRED_CONFIG_KEYS = majConfig.REQUIRED_CONFIG_KEYS;
+var MAX_BQ_TABLE_NAME_LENGTH = majConfig.MAX_BQ_TABLE_NAME_LENGTH;

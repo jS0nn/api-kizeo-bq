@@ -197,7 +197,10 @@ function testCollectResponseArtifactsWithoutLegacySheetSync() {
       log: () => {},
       spreadsheetBdD: { getId: () => 'SPREAD' },
       medias: [],
-      snapshotService: context.FormResponseSnapshot
+      snapshotService: context.FormResponseSnapshot,
+      bigQuery: {
+        prepareParentRow: context.bqPrepareParentRow
+      }
     }
   );
 
@@ -386,9 +389,6 @@ function testProcessDataBuildsSummary() {
     resolveBatchLimit: (value) => Number(value),
     buildExecutionTargets: (existingConfig, overrideTargets) =>
       Object.assign({ bigQuery: true, externalLists: true }, overrideTargets || {}),
-    bqComputeTableName: () => 'dataset_form',
-    bqExtractAliasPart: () => 'dataset_form',
-    bqParentTableId: () => 'dataset_form_parent',
     getFormConfig: () => ({ last_data_id: null }),
     createIngestionServices: () => ({
       fetch: () => {},
@@ -398,7 +398,21 @@ function testProcessDataBuildsSummary() {
         getConfig: () => ({ projectId: 'p', datasetId: 'd', location: 'loc' }),
         ensureDataset: () => ensureCalls.push('dataset'),
         ensureRawTable: () => ensureCalls.push('raw'),
-        ensureParentTable: () => ensureCalls.push('parent')
+        ensureParentTable: () => ensureCalls.push('parent'),
+        ensureSubTable: () => {},
+        ensureMediaTable: () => {},
+        ensureColumns: () => {},
+        ingestRawBatch: () => {},
+        ingestParentBatch: () => {},
+        ingestSubTablesBatch: () => {},
+        ingestMediaBatch: () => {},
+        recordAudit: () => {},
+        computeTableName: () => 'dataset_form',
+        extractAliasPart: () => 'dataset_form_alias',
+        parentTableId: () => 'dataset_form_parent',
+        prepareParentRow: () => ({ row: { id: 'REC-1' }, columns: [], subforms: [] }),
+        prepareSubformRows: () => [],
+        prepareMediaRows: () => []
       }
     }),
     resolveLogFunction: (logger) => logger.log.bind(logger),
@@ -440,6 +454,7 @@ function testProcessDataBuildsSummary() {
   assert.deepStrictEqual(ingestionCalls, ['pipeline'], 'l’ingestion BigQuery doit être déclenchée');
   assert.strictEqual(markCalls.length, 1, 'les réponses doivent être marquées comme lues');
   assert.strictEqual(formulaire.tableName, 'dataset_form_parent', 'le formulaire doit hériter du nom de table parent');
+  assert.strictEqual(formulaire.alias, 'dataset_form_alias', "l'alias doit être calculé par le service BigQuery");
   assert.strictEqual(result.status, 'INGESTED', 'le statut de retour doit refléter le succès');
   assert.strictEqual(result.rowCount, 1, 'une ligne doit être comptabilisée');
   assert.strictEqual(result.metadataUpdateStatus, 'OK', 'la synchronisation des listes doit être validée');
@@ -455,9 +470,6 @@ function testProcessDataWithBigQueryDisabled() {
     resolveBatchLimit: (value) => Number(value),
     buildExecutionTargets: (existingConfig, overrideTargets) =>
       Object.assign({ bigQuery: true, externalLists: true }, overrideTargets || {}),
-    bqComputeTableName: () => 'dataset_form',
-    bqExtractAliasPart: () => 'dataset_form',
-    bqParentTableId: () => 'dataset_form_parent',
     getFormConfig: () => ({ last_data_id: null }),
     createIngestionServices: () => ({
       fetch: () => {},
@@ -467,7 +479,21 @@ function testProcessDataWithBigQueryDisabled() {
         getConfig: () => ({ projectId: 'p', datasetId: 'd', location: 'loc' }),
         ensureDataset: () => ensureCalls.push('dataset'),
         ensureRawTable: () => ensureCalls.push('raw'),
-        ensureParentTable: () => ensureCalls.push('parent')
+        ensureParentTable: () => ensureCalls.push('parent'),
+        ensureSubTable: () => {},
+        ensureMediaTable: () => {},
+        ensureColumns: () => {},
+        ingestRawBatch: () => {},
+        ingestParentBatch: () => {},
+        ingestSubTablesBatch: () => {},
+        ingestMediaBatch: () => {},
+        recordAudit: () => {},
+        computeTableName: () => 'dataset_form',
+        extractAliasPart: () => 'dataset_form_alias',
+        parentTableId: () => 'dataset_form_parent',
+        prepareParentRow: () => ({ row: { id: 'REC-2' }, columns: [], subforms: [] }),
+        prepareSubformRows: () => [],
+        prepareMediaRows: () => []
       }
     }),
     resolveLogFunction: (logger) => logger.log.bind(logger),

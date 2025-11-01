@@ -1,29 +1,12 @@
-var sheetOutilsResolveSymbol =
-  typeof requireSheetSymbol === 'function'
-    ? requireSheetSymbol
-    : function (symbolName) {
-        if (typeof sheetBootstrap !== 'undefined' && sheetBootstrap) {
-          if (typeof sheetBootstrap.require === 'function') {
-            return sheetBootstrap.require(symbolName);
-          }
-          if (typeof sheetBootstrap.requireMany === 'function') {
-            var resolved = sheetBootstrap.requireMany([symbolName]);
-            if (resolved && Object.prototype.hasOwnProperty.call(resolved, symbolName)) {
-              return resolved[symbolName];
-            }
-          }
-        }
-        if (typeof libKizeo === 'undefined' || libKizeo === null) {
-          throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
-        }
-        var value = libKizeo[symbolName];
-        if (value === undefined || value === null) {
-          throw new Error('libKizeo.' + symbolName + ' indisponible');
-        }
-        return value;
-      };
+if (typeof libKizeo === 'undefined' || libKizeo === null) {
+  throw new Error('libKizeo indisponible (sheetInterface/outils)');
+}
 
-var reportException = sheetOutilsResolveSymbol('handleException');
+var reportException = libKizeo.handleException;
+
+if (typeof reportException !== 'function') {
+  throw new Error('handleException indisponible via libKizeo');
+}
 
 const MAIN_TRIGGER_FUNCTION = 'main';
 const DEDUP_TRIGGER_FUNCTION = 'runBigQueryDeduplication';

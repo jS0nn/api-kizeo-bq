@@ -4,32 +4,14 @@ var majExports =
   typeof majExports !== 'undefined'
     ? majExports
     : (function () {
-        function resolveSymbol(symbolName) {
-          if (typeof requireMajSymbol === 'function') {
-            return requireMajSymbol(symbolName);
-          }
-          if (typeof majBootstrap !== 'undefined' && majBootstrap) {
-            if (typeof majBootstrap.require === 'function') {
-              return majBootstrap.require(symbolName);
-            }
-            if (typeof majBootstrap.requireMany === 'function') {
-              var resolved = majBootstrap.requireMany([symbolName]);
-              if (resolved && Object.prototype.hasOwnProperty.call(resolved, symbolName)) {
-                return resolved[symbolName];
-              }
-            }
-          }
-          if (typeof libKizeo === 'undefined' || libKizeo === null) {
-            throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
-          }
-          var value = libKizeo[symbolName];
-          if (value === undefined || value === null) {
-            throw new Error('libKizeo.' + symbolName + ' indisponible');
-          }
-          return value;
+        if (typeof libKizeo === 'undefined' || libKizeo === null) {
+          throw new Error('libKizeo indisponible (MAJ Listes Externes/exports)');
         }
 
-        var sheetDriveExports = resolveSymbol('SheetDriveExports');
+        var sheetDriveExports = libKizeo.SheetDriveExports;
+        if (!sheetDriveExports) {
+          throw new Error('SheetDriveExports indisponible via libKizeo');
+        }
 
         function getOrCreateSubFolder(parentFolderId, subFolderName) {
           return sheetDriveExports.getOrCreateSubFolder(parentFolderId, subFolderName);
