@@ -1,3 +1,34 @@
+var requireLibKizeoSymbol =
+  typeof requireLibKizeoSymbol === 'function'
+    ? requireLibKizeoSymbol
+    : function (symbolName) {
+        if (typeof libKizeo === 'undefined' || libKizeo === null) {
+          throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
+        }
+        const value = libKizeo[symbolName];
+        if (value === undefined || value === null) {
+          throw new Error('libKizeo.' + symbolName + ' indisponible');
+        }
+        return value;
+      };
+
+var reportException =
+  typeof reportException === 'function' ? reportException : requireLibKizeoSymbol('handleException');
+var fetchKizeo =
+  typeof fetchKizeo === 'function' ? fetchKizeo : requireLibKizeoSymbol('requeteAPIDonnees');
+var computeTableName =
+  typeof computeTableName === 'function'
+    ? computeTableName
+    : requireLibKizeoSymbol('bqComputeTableName');
+var gestionFeuilles =
+  typeof gestionFeuilles === 'function'
+    ? gestionFeuilles
+    : requireLibKizeoSymbol('gestionFeuilles');
+var ensureBigQueryCoreTables =
+  typeof ensureBigQueryCoreTables === 'function'
+    ? ensureBigQueryCoreTables
+    : requireLibKizeoSymbol('ensureBigQueryCoreTables');
+
 /**
  * Crée un menu personnalisé dans la feuille de calcul active et ajoute des éléments avec des actions correspondantes.
  * 
@@ -16,7 +47,7 @@ function afficheMenu() {
       .addItem('Supprimer les déclencheurs automatiques', 'confirmDeleteTriggers')
       .addToUi();
   } catch (e) {
-    libKizeo.handleException('afficheMenu', e);
+    reportException('afficheMenu', e);
   }
 }
 
@@ -33,7 +64,7 @@ function chargeSelectForm() {
     const htmlOutput = htmlServeur.evaluate().setWidth(800).setHeight(800);
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, ' ');
   } catch (e) {
-    libKizeo.handleException('chargeSelectForm', e);
+    reportException('chargeSelectForm', e);
   }
 }
 
@@ -77,12 +108,12 @@ function confirmDeleteTriggers() {
  */
 function chargelisteFormulaires() {
   try {
-    const listeFormulaires = libKizeo.requeteAPIDonnees('GET', `/forms`).data;
+    const listeFormulaires = fetchKizeo('GET', `/forms`).data;
     const tableauForms = listeFormulaires.forms.sort((a, b) => a.name.localeCompare(b.name));
 
     return tableauForms;
   } catch (e) {
-    libKizeo.handleException('chargelisteFormulaires', e);
+    reportException('chargelisteFormulaires', e);
   }
 }
 
@@ -112,7 +143,7 @@ function enregistrementUI(formulaire) {
 
     let tableName = '';
     try {
-      tableName = libKizeo.bqComputeTableName(formulaireData.id, formulaireData.nom, rawTableName);
+      tableName = computeTableName(formulaireData.id, formulaireData.nom, rawTableName);
     } catch (computeError) {
       Logger.log(`enregistrementUI: échec calcul nom table -> ${computeError}`);
     }
@@ -138,10 +169,10 @@ function enregistrementUI(formulaire) {
     const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
     setScriptProperties('enCours');
     try {
-      const targetSheet = libKizeo.gestionFeuilles(spreadsheetBdD, formulaireData);
+      const targetSheet = gestionFeuilles(spreadsheetBdD, formulaireData);
       if (!targetSheet) {
         ui.alert('Erreur', 'Impossible de préparer la feuille de configuration.', ui.ButtonSet.OK);
-        Logger.log('enregistrementUI: libKizeo.gestionFeuilles a renvoyé null.');
+        Logger.log('enregistrementUI: gestionFeuilles a renvoyé null.');
         return;
       }
 
@@ -168,9 +199,9 @@ function enregistrementUI(formulaire) {
       ensureDeduplicationTrigger();
       console.log(`Enregistrement UI -> action=${actionCode}, table=${tableName}`);
       try {
-        libKizeo.ensureBigQueryCoreTables();
+        ensureBigQueryCoreTables();
       } catch (ensureError) {
-        libKizeo.handleException('enregistrementUI.ensureCore', ensureError, {
+        reportException('enregistrementUI.ensureCore', ensureError, {
           formId: formulaireData.id,
           tableName
         });
@@ -180,7 +211,7 @@ function enregistrementUI(formulaire) {
       setScriptProperties('termine');
     }
   } catch (e) {
-    libKizeo.handleException('enregistrementUI', e, { formulaire: formulaire, user: user });
+    reportException('enregistrementUI', e, { formulaire: formulaire, user: user });
   }
 }
 

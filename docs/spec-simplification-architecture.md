@@ -2,7 +2,7 @@
 
 ## 1. Contexte & constats
 - Le projet dépendait d’un alias global `libKizeo` (hérité de l’ancienne bibliothèque) pour accéder aux fonctions de `lib/`.  
-  Les appels sont désormais directs (`processData`, `requeteAPIDonnees`, etc.), ce qui simplifie la navigation et réduit les couches intermédiaires.
+  Les appels passent désormais par un helper commun (`requireLibKizeoSymbol`) et l’agrégateur `libKizeo` a été supprimé de `0_Data.js`, ce qui simplifie la navigation et réduit les couches intermédiaires.
 - `lib/ProcessManager.js` concentre toutes les responsabilités (lecture Kizeo, staging, BigQuery, listes externes, marquage) dans une IIFE de plus de 700 lignes.  
   Résultat : faible lisibilité, dépendances implicites (`global.*`) et faible testabilité.
 - Les modules clefs (`FormResponseSnapshot`, `KizeoClient`, `ExternalListsService`, `DriveMediaService`) exposent désormais directement leurs fonctions globales.
@@ -40,7 +40,7 @@
 1. Réécrire `lib/ProcessManager.js` sans IIFE et sans re-export massif vers `global`.  
    Extraire les sous-fonctions internes en blocs indépendants et limiter les exports publics à `processData`, `handleResponses`, `markResponsesAsRead`, `resolveUnreadDataset` (si nécessaire).
 2. Simplifier `lib/0_Data.js` pour qu’il n’expose plus que la liste des fonctions publiques (ou qu’il soit supprimé si les déclarations globales suffisent).  
-   Toute fonction ne faisant que déléguer devient inutile.
+   Toute fonction ne faisant que déléguer devient inutile. *(fait — `getLibPublicSymbols` documente désormais l’API)*
 3. Adapter les autres modules (`FormResponseSnapshot`, `KizeoClient`, `ExternalListsService`, `DriveMediaService`) pour qu’ils exposent directement leurs fonctions sans alias supplémentaires. *(fait)*
 4. Vérifier l’absence de références internes au pattern `ensureProcessManager()` ou `recordLegacyUsage()` ; retirer ces helpers si non utilisés. *(fait)*
 5. **Tests associés (à planifier)**  
@@ -62,7 +62,7 @@
 ### Phase C — Legacy, documentation et validation
 8. (Fait) Supprimer le code Sheets legacy (`SheetSnapshot.js`, wrappers temporaires) après vérification qu’aucun appel ne subsiste.
 9. Mettre à jour `docs/legacy-deprecation-plan.md`, `docs/tasks-apps-script-refacto.md`, `README.md` et `AGENTS.md` pour refléter la nouvelle architecture (plus de wrappers, API publique simplifiée).
-10. Créer/mettre à jour un fichier listant l’API publique (`lib/public-api.md` ou commentaire en tête de `0_Data.js`) pour garder la trace des fonctions exposées.
+10. Créer/mettre à jour un fichier listant l’API publique (`lib/public-api.md` ou commentaire en tête de `0_Data.js`) pour garder la trace des fonctions exposées. *(fait — `getLibPublicSymbols` retourne la liste officielle)*
 11. Vérifier l’exécution manuelle (`sheetInterface/main`, `majSheet`, `MAJ Listes Externes`) et ajuster les tests manuels (`ZZ_tests.js`) pour utiliser les nouveaux appels.
 12. **Tests associés**  
     - Exécuter la batterie de scénarios manuels (ingestion, listes externes, exports Drive) avant et après la suppression du legacy pour comparer les logs.  

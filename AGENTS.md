@@ -31,7 +31,7 @@
 ## Repository structure
 
 - `lib/` — main modules:
-  - `0_Data.js`: agrégateur `libKizeo` et constantes partagées.
+  - `0_Data.js`: référentiel des symboles publics (`getLibPublicSymbols`) et constantes partagées.
   - `backfill.js`: exécution des backfills BigQuery (lecture Kizeo `data/all`).
   - `bigquery/ingestion.js`: BigQuery ingestion logic.
   - `process/`: orchestration (`collector`, `unread`, `external-lists`, `utils`).

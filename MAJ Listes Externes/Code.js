@@ -1,4 +1,4 @@
-//Version 4.3.0
+//Version 4.4.0
 
 /**    DOC :
   https://www.kizeoforms.com/doc/swagger/v3/#/
@@ -31,6 +31,59 @@
   ⚠⚠⚠ Attention aux champs cases à choix multiples  (doit on concatainer les réponses ou créer un nouvel onglet ?) ⚠⚠⚠
 
   */
+
+var requireLibKizeoSymbol =
+  typeof requireLibKizeoSymbol === 'function'
+    ? requireLibKizeoSymbol
+    : function (symbolName) {
+        if (typeof libKizeo === 'undefined' || libKizeo === null) {
+          throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
+        }
+        const value = libKizeo[symbolName];
+        if (value === undefined || value === null) {
+          throw new Error('libKizeo.' + symbolName + ' indisponible');
+        }
+        return value;
+      };
+
+var reportException =
+  typeof reportException === 'function' ? reportException : requireLibKizeoSymbol('handleException');
+var fetchKizeo =
+  typeof fetchKizeo === 'function' ? fetchKizeo : requireLibKizeoSymbol('requeteAPIDonnees');
+var ingestProcessData =
+  typeof ingestProcessData === 'function' ? ingestProcessData : requireLibKizeoSymbol('processData');
+var sheetInterfaceHelpers =
+  typeof sheetInterfaceHelpers !== 'undefined'
+    ? sheetInterfaceHelpers
+    : requireLibKizeoSymbol('SheetInterfaceHelpers');
+var sheetConfigHelpers =
+  typeof sheetConfigHelpers !== 'undefined'
+    ? sheetConfigHelpers
+    : requireLibKizeoSymbol('SheetConfigHelpers');
+var sheetDriveExports =
+  typeof sheetDriveExports !== 'undefined'
+    ? sheetDriveExports
+    : requireLibKizeoSymbol('SheetDriveExports');
+var computeTableName =
+  typeof computeTableName === 'function'
+    ? computeTableName
+    : requireLibKizeoSymbol('bqComputeTableName');
+var extractAliasPart =
+  typeof extractAliasPart === 'function'
+    ? extractAliasPart
+    : requireLibKizeoSymbol('bqExtractAliasPart');
+var runDeduplication =
+  typeof runDeduplication === 'function'
+    ? runDeduplication
+    : requireLibKizeoSymbol('bqRunDeduplicationForForm');
+var initBigQueryConfig =
+  typeof initBigQueryConfig === 'function'
+    ? initBigQueryConfig
+    : requireLibKizeoSymbol('initBigQueryConfig');
+var ensureBigQueryCoreTables =
+  typeof ensureBigQueryCoreTables === 'function'
+    ? ensureBigQueryCoreTables
+    : requireLibKizeoSymbol('ensureBigQueryCoreTables');
 
 // Paramétrage de la limite d'ingestion Kizeo
 const DEFAULT_KIZEO_BATCH_LIMIT = 30;
@@ -122,7 +175,7 @@ const CONFIG_DISPLAY_HEADER = ['Paramètre', 'Valeur'];
 const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'action'];
 const MAX_BQ_TABLE_NAME_LENGTH = 128;
 
-const SHEET_CONFIG_SERVICE = libKizeo.SheetConfigHelpers.create({
+const SHEET_CONFIG_SERVICE = sheetConfigHelpers.create({
   requiredKeys: REQUIRED_CONFIG_KEYS,
   configHeaders: CONFIG_HEADERS,
   batchLimitKey: CONFIG_BATCH_LIMIT_KEY,
@@ -132,16 +185,12 @@ const SHEET_CONFIG_SERVICE = libKizeo.SheetConfigHelpers.create({
   sanitizeBooleanFlag: sanitizeBooleanConfigFlag,
   getConfiguredBatchLimit: getConfiguredBatchLimit,
   computeTableName: function (formId, formName, candidate) {
-    return libKizeo.bqComputeTableName(formId, formName, candidate);
+    return computeTableName(formId, formName, candidate);
   },
   maxTableNameLength: MAX_BQ_TABLE_NAME_LENGTH,
   applyLayout: function (sheet, rowCount, rowIndexMap) {
-    if (
-      typeof libKizeo !== 'undefined' &&
-      libKizeo.SheetInterfaceHelpers &&
-      typeof libKizeo.SheetInterfaceHelpers.applyConfigLayout === 'function'
-    ) {
-      libKizeo.SheetInterfaceHelpers.applyConfigLayout(sheet, rowCount, {
+    if (sheetInterfaceHelpers && typeof sheetInterfaceHelpers.applyConfigLayout === 'function') {
+      sheetInterfaceHelpers.applyConfigLayout(sheet, rowCount, {
         headerLabels: CONFIG_DISPLAY_HEADER,
         rowIndexMap: rowIndexMap,
         triggerOptions: TRIGGER_OPTIONS,
@@ -344,7 +393,7 @@ function getEtatExecution() {
 function initBigQueryConfigFromSheet() {
   try {
     const ui = SpreadsheetApp.getUi();
-    const defaults = libKizeo.initBigQueryConfig();
+    const defaults = initBigQueryConfig();
     const refreshedProps = PropertiesService.getDocumentProperties();
     refreshedProps.setProperties(
       {
@@ -355,9 +404,9 @@ function initBigQueryConfigFromSheet() {
       true
     );
     try {
-      libKizeo.ensureBigQueryCoreTables();
+      ensureBigQueryCoreTables();
     } catch (ensureError) {
-      libKizeo.handleException('initBigQueryConfigFromSheet.ensureCore', ensureError);
+      reportException('initBigQueryConfigFromSheet.ensureCore', ensureError);
     }
     const finalProject = refreshedProps.getProperty('BQ_PROJECT_ID');
     const finalDataset = refreshedProps.getProperty('BQ_DATASET');
@@ -371,7 +420,7 @@ function initBigQueryConfigFromSheet() {
       }`
     );
   } catch (e) {
-    libKizeo.handleException('initBigQueryConfigFromSheet', e);
+    reportException('initBigQueryConfigFromSheet', e);
   }
 }
 
@@ -385,7 +434,7 @@ function initBigQueryConfigFromSheet() {
  * @return {string} id du sous‑dossier
  */
 function getOrCreateSubFolder(parentFolderId, subFolderName) {
-  return libKizeo.SheetDriveExports.getOrCreateSubFolder(parentFolderId, subFolderName);
+  return sheetDriveExports.getOrCreateSubFolder(parentFolderId, subFolderName);
 }
 
 /**
@@ -394,14 +443,14 @@ function getOrCreateSubFolder(parentFolderId, subFolderName) {
  * @return {string}
  */
 function buildMediaDisplayName(media) {
-  return libKizeo.SheetDriveExports.buildMediaDisplayName(media);
+  return sheetDriveExports.buildMediaDisplayName(media);
 }
 
 /**
  * Sauvegarde un blob PDF dans un dossier cible.
  */
 function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
-  libKizeo.SheetDriveExports.exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId);
+  sheetDriveExports.exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId);
 }
 
 /**
@@ -409,7 +458,7 @@ function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
  * Un média est considéré comme déjà présent s'il existe un fichier du même nom dans le dossier cible.
  */
 function exportMedias(mediaList, targetFolderId) {
-  libKizeo.SheetDriveExports.exportMedias(mediaList, targetFolderId);
+  sheetDriveExports.exportMedias(mediaList, targetFolderId);
 }
 
 function readFormConfigFromSheet(sheet) {
@@ -460,8 +509,8 @@ function main() {
   context.config = Object.assign({}, context.config, validation.config);
 
   if (getEtatExecution() === 'enCours') {
-    if (typeof libKizeo !== 'undefined' && libKizeo.SheetInterfaceHelpers) {
-      libKizeo.SheetInterfaceHelpers.notifyExecutionAlreadyRunning({ showAlert: false, showToast: false });
+    if (sheetInterfaceHelpers) {
+      sheetInterfaceHelpers.notifyExecutionAlreadyRunning({ showAlert: false, showToast: false });
     }
     console.log('Exécution précédente toujours en cours.');
     console.log("En cas de blocage, réinitialisez l'état manuellement ou exécutez setScriptProperties('termine').");
@@ -476,7 +525,7 @@ function main() {
     const tableName = validation.config.bq_table_name;
     let aliasPart = tableName;
     try {
-      aliasPart = libKizeo.bqExtractAliasPart(tableName, validation.config.form_id);
+      aliasPart = extractAliasPart(tableName, validation.config.form_id);
     } catch (aliasError) {
       console.log(`main: impossible d'extraire l'alias -> ${aliasError}`);
     }
@@ -492,7 +541,7 @@ function main() {
 
     const ingestFlag = validation.config[CONFIG_INGEST_BIGQUERY_KEY];
     if (
-      !libKizeo.SheetInterfaceHelpers.ensureBigQueryConfigAvailability(
+      !sheetInterfaceHelpers.ensureBigQueryConfigAvailability(
         ingestFlag,
         context.sheet ? context.sheet.getName() : ''
       )
@@ -500,7 +549,7 @@ function main() {
       return;
     }
 
-    const unreadResp = libKizeo.requeteAPIDonnees(
+    const unreadResp = fetchKizeo(
       'GET',
       `/forms/${formulaire.id}/data/unread/${action}/${batchLimit}?includeupdated`
     );
@@ -512,7 +561,7 @@ function main() {
 
     const nouvellesDonnees = Array.isArray(unreadResp.data.data) ? unreadResp.data.data : [];
 
-    const processResult = libKizeo.processData(spreadsheetBdD, formulaire, action, batchLimit, {
+    const processResult = ingestProcessData(spreadsheetBdD, formulaire, action, batchLimit, {
       unreadPayload: unreadResp.data
     });
     const runDurationMs = Math.max(0, Date.now() - runStart);
@@ -593,7 +642,7 @@ function main() {
       if (['pdf', 'pdfmedia'].includes(typeExport)) {
         console.log('Export type PDF pour ' + dataId);
         try {
-          const pdfResp = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/pdf`);
+          const pdfResp = fetchKizeo('GET', `/forms/${formulaire.id}/data/${dataId}/pdf`);
           exportPdfBlob(formulaire.nom, dataId, pdfResp.data, targetFolderId);
         } catch (e) {
           Logger.log(`Erreur export PDF : ${e.message}`);
@@ -606,7 +655,7 @@ function main() {
       }
     });
   } catch (e) {
-    libKizeo.handleException('main', e);
+    reportException('main', e);
   } finally {
     setScriptProperties('termine');
   }
@@ -648,7 +697,7 @@ function runBigQueryDeduplication() {
   const tableName = validation.config.bq_table_name;
   let aliasPart = tableName;
   try {
-    aliasPart = libKizeo.bqExtractAliasPart(tableName, validation.config.form_id);
+    aliasPart = extractAliasPart(tableName, validation.config.form_id);
   } catch (aliasError) {
     console.log(`runBigQueryDeduplication: impossible d'extraire l'alias -> ${aliasError}`);
   }
@@ -669,7 +718,7 @@ function runBigQueryDeduplication() {
     };
   }
   if (
-    !libKizeo.SheetInterfaceHelpers.ensureBigQueryConfigAvailability(
+    !sheetInterfaceHelpers.ensureBigQueryConfigAvailability(
       ingestFlag,
       context.sheet ? context.sheet.getName() : ''
     )
@@ -684,7 +733,7 @@ function runBigQueryDeduplication() {
   Logger.log(`runBigQueryDeduplication: lancement pour ${formulaire.id} (${tableName})`);
 
   try {
-    const summary = libKizeo.bqRunDeduplicationForForm(formulaire);
+    const summary = runDeduplication(formulaire);
     if (summary) {
       Logger.log(
         `runBigQueryDeduplication: terminé -> parent supprimé=${summary.parent.deleted}, tables filles traitées=${summary.subTables.length}`
@@ -701,7 +750,7 @@ function runBigQueryDeduplication() {
       subTables: []
     };
   } catch (e) {
-    libKizeo.handleException('runBigQueryDeduplication', e, {
+    reportException('runBigQueryDeduplication', e, {
       formId: formulaire.id,
       tableName
     });

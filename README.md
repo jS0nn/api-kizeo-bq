@@ -31,7 +31,7 @@
 ```
 .
 ├── lib/                # Bibliothèque Apps Script (fonctions exposées globalement)
-│   ├── 0_Data.js            # Agrégation des exports `libKizeo` + constantes communes
+│   ├── 0_Data.js            # Référentiel des symboles publics + constantes communes
 │   ├── backfill.js          # Backfill BigQuery (lecture data/all, ingestion raw/parent)
 │   ├── bigquery/ingestion.js   # Ingestion, audit et déduplication BigQuery
 │   ├── process/             # Orchestration (collecte, unread, external lists…)

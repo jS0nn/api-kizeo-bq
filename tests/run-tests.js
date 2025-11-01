@@ -241,8 +241,8 @@ function testCollectMediasForRecordUsesSnapshotService() {
   assert.strictEqual(calls.length, 1, 'sans snapshot service, aucun appel supplémentaire ne doit être effectué');
 }
 
-function testLibKizeoExportsAggregator() {
-  const stubs = {
+function testLibPublicSymbolsExports() {
+  const functionStubs = {
     handleException: function handleException() {},
     requeteAPIDonnees: function requeteAPIDonnees() {},
     processData: function processData() {},
@@ -265,38 +265,87 @@ function testLibKizeoExportsAggregator() {
     bqParentTableId: function bqParentTableId() {},
     bqBackfillForm: function bqBackfillForm() {},
     gestionFeuilles: function gestionFeuilles() {},
-    isNumeric: function isNumeric() {}
+    isNumeric: function isNumeric() {},
+    fetchUnreadResponses: function fetchUnreadResponses() {},
+    ingestResponsesBatch: function ingestResponsesBatch() {},
+    finalizeIngestionRun: function finalizeIngestionRun() {}
   };
 
-  const context = createContext(
-    Object.assign(
-      {
-        DriveMediaService: { service: true },
-        ExternalListsService: { updateFromSnapshot: () => {} },
-        FormResponseSnapshot: { buildRowSnapshot: () => {} },
-        libKizeo: { legacy: 42 }
-      },
-      stubs
-    )
-  );
+  const objectExports = {
+    DriveMediaService: { getDefault: () => ({}) },
+    ExternalListsService: { updateFromSnapshot: () => {} },
+    SheetInterfaceHelpers: { applyConfigLayout: () => {} },
+    SheetConfigHelpers: { create: () => {} },
+    SheetDriveExports: { exportMedias: () => {} },
+    FormResponseSnapshot: { buildRowSnapshot: () => {} }
+  };
+
+  const context = createContext(Object.assign({}, functionStubs, objectExports));
 
   runFile('lib/0_Data.js', context);
 
-  assert.strictEqual(context.libKizeo.legacy, 42, 'les propriétés existantes doivent être conservées');
+  assert.strictEqual(typeof context.libKizeo, 'undefined', 'aucun alias libKizeo ne doit être créé');
+  const dataLogPrefix = vm.runInContext(
+    'typeof DATA_LOG_PREFIX === "undefined" ? undefined : DATA_LOG_PREFIX',
+    context
+  );
+  assert.strictEqual(dataLogPrefix, 'lib:Data', 'DATA_LOG_PREFIX doit rester global');
   assert.strictEqual(
-    context.libKizeo.bqBackfillForm,
-    context.bqBackfillForm,
-    'bqBackfillForm doit être exposée'
+    typeof context.getLibPublicSymbols,
+    'function',
+    'getLibPublicSymbols doit être exposée'
   );
+
+  const symbols = context.getLibPublicSymbols();
+  assert.ok(Array.isArray(symbols), 'getLibPublicSymbols doit renvoyer un tableau');
+  assert.ok(symbols.length > 0, 'la liste des symboles publics ne doit pas être vide');
+
+  const expectedSymbols = [
+    'DATA_LOG_PREFIX',
+    'handleException',
+    'requeteAPIDonnees',
+    'processData',
+    'handleResponses',
+    'markResponsesAsRead',
+    'createIngestionServices',
+    'buildExecutionTargets',
+    'resolveBatchLimit',
+    'resolveIsoTimestamp',
+    'resolveUnreadDataset',
+    'collectResponseArtifacts',
+    'ingestBigQueryPayloads',
+    'runExternalListsSync',
+    'initBigQueryConfig',
+    'ensureBigQueryCoreTables',
+    'getBigQueryConfig',
+    'bqComputeTableName',
+    'bqExtractAliasPart',
+    'bqRunDeduplicationForForm',
+    'bqParentTableId',
+    'bqBackfillForm',
+    'DriveMediaService',
+    'ExternalListsService',
+    'SheetInterfaceHelpers',
+    'SheetConfigHelpers',
+    'SheetDriveExports',
+    'FormResponseSnapshot',
+    'gestionFeuilles',
+    'isNumeric',
+    'fetchUnreadResponses',
+    'ingestResponsesBatch',
+    'finalizeIngestionRun'
+  ];
+
   assert.strictEqual(
-    context.libKizeo.ExternalListsService,
-    context.ExternalListsService,
-    'ExternalListsService doit être exposé'
+    symbols.length,
+    expectedSymbols.length,
+    'la liste des symboles publics doit conserver le même nombre d’entrées'
   );
-  assert.ok(
-    !Object.prototype.hasOwnProperty.call(context.libKizeo, 'nonDefini'),
-    'aucune propriété indéfinie ne doit être ajoutée'
-  );
+  expectedSymbols.forEach((symbol) => {
+    assert.ok(symbols.indexOf(symbol) !== -1, `le symbole ${symbol} doit rester exposé`);
+  });
+  const unexpected = symbols.filter((symbol) => expectedSymbols.indexOf(symbol) === -1);
+  assert.strictEqual(unexpected.length, 0, 'aucun symbole inattendu ne doit être exposé');
 }
 
 function testRunExternalListsSyncWithoutService() {
@@ -864,7 +913,7 @@ const tests = [
   { name: 'createIngestionServices expose les services globaux', fn: testCreateIngestionServicesUsesGlobalFactories },
   { name: 'collectResponseArtifacts fonctionne sans legacy Sheets', fn: testCollectResponseArtifactsWithoutLegacySheetSync },
   { name: 'collectMediasForRecord exploite le snapshot', fn: testCollectMediasForRecordUsesSnapshotService },
-  { name: 'libKizeo agrège les exports disponibles', fn: testLibKizeoExportsAggregator },
+  { name: 'getLibPublicSymbols documente les exports globaux', fn: testLibPublicSymbolsExports },
   { name: 'runExternalListsSync ignore l’absence de service', fn: testRunExternalListsSyncWithoutService },
   { name: 'processData construit un résumé cohérent', fn: testProcessDataBuildsSummary },
   { name: 'processData respecte les cibles d’exécution désactivées', fn: testProcessDataWithBigQueryDisabled },

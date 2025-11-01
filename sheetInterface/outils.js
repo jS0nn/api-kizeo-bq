@@ -1,3 +1,20 @@
+var requireLibKizeoSymbol =
+  typeof requireLibKizeoSymbol === 'function'
+    ? requireLibKizeoSymbol
+    : function (symbolName) {
+        if (typeof libKizeo === 'undefined' || libKizeo === null) {
+          throw new Error('libKizeo indisponible (accès ' + symbolName + ')');
+        }
+        const value = libKizeo[symbolName];
+        if (value === undefined || value === null) {
+          throw new Error('libKizeo.' + symbolName + ' indisponible');
+        }
+        return value;
+      };
+
+var reportException =
+  typeof reportException === 'function' ? reportException : requireLibKizeoSymbol('handleException');
+
 const MAIN_TRIGGER_FUNCTION = 'main';
 const DEDUP_TRIGGER_FUNCTION = 'runBigQueryDeduplication';
 const DEDUP_TRIGGER_INTERVAL_HOURS = 1;
@@ -142,13 +159,9 @@ function uiHandleException(functionName, error, context) {
     lowerMessage.indexOf('authorization') !== -1 ||
     lowerMessage.indexOf('auth') !== -1;
 
-  if (
-    !authRelated &&
-    typeof libKizeo !== 'undefined' &&
-    typeof libKizeo.handleException === 'function'
-  ) {
+  if (!authRelated && typeof reportException === 'function') {
     try {
-      libKizeo.handleException(functionName, error, context);
+      reportException(functionName, error, context);
     } catch (mailError) {
       const fallbackMessage = mailError && mailError.message ? mailError.message : String(mailError);
       console.log(`uiHandleException fallback (${functionName}): ${fallbackMessage}`);
