@@ -12,14 +12,14 @@
 
 ## 2. Objectifs
 1. Supprimer toute dépendance à l’alias `libKizeo` et exposer les fonctions directement (déclarations globales ou modules Apps Script simples).
-2. Découper l’orchestration en modules plus petits et explicites pour réduire la taille de `ProcessManager` et clarifier les enchaînements.
+2. (en cours) Découper l’orchestration en modules plus petits et explicites pour réduire la taille de `ProcessManager` et clarifier les enchaînements. Les fonctions `fetchUnreadResponses`, `ingestResponsesBatch` et `finalizeIngestionRun` ont été introduites pour structurer le flux ; il reste à externaliser la boucle exports Drive / triggers.
 3. Mettre à jour les scripts liés pour appeler les fonctions natives (`processData`, `requeteAPIDonnees`, `ensureBigQueryCoreTables`, etc.) sans wrapper.
 4. Éliminer ou déplacer le code Sheets legacy restant, afin de simplifier la maintenance et préparer la suppression définitive.
 5. Documenter l’API publique réelle de la librairie et les dépendances à conserver (token Kizeo, BigQuery, Drive).
 
 ## 3. Architecture cible
 - **Modules principaux (`lib/`)**
-  - `ProcessManager.js` : regrouper uniquement l’orchestration et séparer les blocs internes en fonctions pures (`resolveUnreadDataset`, `collectResponseArtifacts`, `ingestBigQueryPayloads`, `runExternalListsSync`, `markResponsesAsRead`).  
+  - `ProcessManager.js` : regrouper uniquement l’orchestration et séparer les blocs internes en fonctions pures (`fetchUnreadResponses`, `ingestResponsesBatch`, `finalizeIngestionRun`, `collectResponseArtifacts`, `runExternalListsSync`, `markResponsesAsRead`).  
     Supprimer l’IIFE et exposer directement les fonctions utilisées.
   - `FormResponseSnapshot.js`, `KizeoClient.js`, `ExternalListsService.js`, `DriveMediaService.js` : conserver des fonctions pures exportées globalement (sans IIFE ni réexport intermédiaire).
   - `0_Data.js` : fournir uniquement les helpers utiles (`createIngestionServices`, `bqBackfillForm`, …) sans alias additionnel.
@@ -28,7 +28,8 @@
 - **Scripts liés (`sheetInterface/`, `MAJ Listes Externes/`)**
   - Supprimer toute référence à `libKizeo.*`.  
     Appeler directement `processData`, `handleException`, `requeteAPIDonnees`, `ensureBigQueryCoreTables`, `gestionFeuilles`, etc. *(complété)*
-  - Factoriser la logique de configuration (lecture/écriture sur feuille `Config`, normalisation des flags) dans un module partagé (`ConfigService` ou `config.js`) pour éviter la duplication dans les deux scripts.
+  - ✅ Factoriser la logique de configuration (lecture/écriture feuille `Config`, normalisation des flags) via `lib/SheetConfigHelpers.js` consommé par les deux scripts Sheets.
+  - ✅ Mutualiser les exports Drive (PDF/médias) via `lib/SheetDriveExports.js` pour supprimer la duplication entre `sheetInterface` et `MAJ Listes Externes`.
   - Réorganiser `Code.js` : séparer triggers, orchestration (`main`, `majSheet`), exports Drive, utilitaires.  
     Garder `Code.js` comme point d’entrée déclarant les fonctions appelées par les triggers.
   - Adapter `UI.js` à la nouvelle API (gestion des erreurs directe, chargement des formulaires via `requeteAPIDonnees`).

@@ -138,12 +138,14 @@ function enregistrementUI(formulaire) {
     const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
     if (getEtatExecution() === 'enCours') {
       console.log('enregistrementUI: exécution précédente détectée avant configuration.');
-      notifyExecutionAlreadyRunning({
-        shouldThrow: true,
-        errorMessage: 'EXECUTION_EN_COURS',
-        showToast: false,
-        showAlert: false
-      });
+      if (typeof libKizeo !== 'undefined' && libKizeo.SheetInterfaceHelpers) {
+        libKizeo.SheetInterfaceHelpers.notifyExecutionAlreadyRunning({
+          shouldThrow: true,
+          errorMessage: 'EXECUTION_EN_COURS',
+          showToast: false,
+          showAlert: false
+        });
+      }
     }
     setScriptProperties('enCours');
     try {
@@ -210,10 +212,14 @@ function enregistrementUI(formulaire) {
 function majSheet() {
   if (getEtatExecution() === 'enCours') {
     console.log('majSheet: exécution précédente détectée.');
-    notifyExecutionAlreadyRunning({
-      toastMessage: "Une mise à jour est déjà en cours. Relancez depuis le menu seulement lorsqu'elle sera terminée.",
-      alertMessage: "Une mise à jour est déjà en cours. Patientez avant de relancer depuis le menu."
-    });
+    if (typeof libKizeo !== 'undefined' && libKizeo.SheetInterfaceHelpers) {
+      libKizeo.SheetInterfaceHelpers.notifyExecutionAlreadyRunning({
+        toastMessage:
+          "Une mise à jour est déjà en cours. Relancez depuis le menu seulement lorsqu'elle sera terminée.",
+        alertMessage:
+          "Une mise à jour est déjà en cours. Patientez avant de relancer depuis le menu."
+      });
+    }
     return;
   }
   main({ origin: 'menu' });

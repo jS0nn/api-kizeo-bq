@@ -150,11 +150,14 @@ function zzDescribeScenarioSheetInterface() {
 
   const validation = validateFormConfig(config, fakeSheet);
 
-  if (typeof library.getBigQueryConfig !== 'function') {
-    throw new Error('libKizeo.getBigQueryConfig est requis pour zzDescribeScenarioSheetInterface.');
+  if (
+    typeof library.SheetInterfaceHelpers === 'undefined' ||
+    typeof library.SheetInterfaceHelpers.ensureBigQueryConfigAvailability !== 'function'
+  ) {
+    throw new Error('libKizeo.SheetInterfaceHelpers.ensureBigQueryConfigAvailability est requis pour zzDescribeScenarioSheetInterface.');
   }
 
-  const availability = ensureBigQueryConfigAvailability(
+  const availability = library.SheetInterfaceHelpers.ensureBigQueryConfigAvailability(
     validation.config ? validation.config[CONFIG_INGEST_BIGQUERY_KEY] : 'false',
     fakeSheet.getName()
   );

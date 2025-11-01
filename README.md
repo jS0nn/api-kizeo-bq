@@ -31,12 +31,16 @@
 ```
 .
 ├── lib/                # Bibliothèque Apps Script (fonctions exposées globalement)
+│   ├── 0_Data.js            # Agrégation des exports `libKizeo` + constantes communes
+│   ├── backfill.js          # Backfill BigQuery (lecture data/all, ingestion raw/parent)
 │   ├── bigquery/ingestion.js   # Ingestion, audit et déduplication BigQuery
-│   ├── process/             # Orchestration (ingestBigQueryPayloads, external lists…)
-│   ├── APIHandler.js        # Appels Kizeo (UrlFetch)
+│   ├── process/             # Orchestration (collecte, unread, external lists…)
 │   ├── KizeoClient.js       # Client HTTP Kizeo (cache token, gestion erreurs)
 │   ├── DriveMediaService.js # Téléchargement médias Drive + caches
-│   ├── ListesExternes.js    # Synchronisation des listes externes Kizeo
+│   ├── ExternalListsService.js # Synchronisation des listes externes Kizeo
+│   ├── SheetInterfaceHelpers.js # Helpers communs aux scripts Sheets (formatage, notifications)
+│   ├── SheetConfigHelpers.js    # Lecture/validation/écriture de la feuille Config
+│   ├── SheetDriveExports.js     # Export Drive (PDF, médias) partagé par les scripts Sheets
 │   ├── Outils.js            # Config formulaire, helpers feuille principale
 │   ├── zz_Tests.js          # Scénarios exploratoires ou de test manuel
 │   └── appsscript.json      # Manifest Apps Script de la librairie

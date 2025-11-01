@@ -17,5 +17,5 @@
 ## 3. Points de vigilance
 
 - Les scripts liés n’utilisent plus de wrappers `libKizeo.*` : vérifier que toute nouvelle fonctionnalité s’appuie sur les fonctions globales (`processData`, `ExternalListsService`, `DriveMediaService`).
-- Conserver des scénarios manuels (`zzDescribeScenarioProcessManager`, `zzDescribeScenarioSheetInterface`, `zzDescribeScenarioMajListesExternes`) pour valider ingestion, médias Drive et listes externes après toute évolution.
+- Conserver des scénarios manuels (`zzDescribeScenarioProcessManager`, `zzDescribeScenarioSheetInterface`, `zzDescribeScenarioMajExternalListsService`) pour valider ingestion, médias Drive et listes externes après toute évolution.
 - Documenter les procédures de rotation (token Kizeo, ScriptProperties BigQuery, droits Drive) dans `README.md` et `docs/test-runs.md`.

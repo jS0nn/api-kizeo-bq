@@ -1,4 +1,4 @@
-//Version 4.4.0
+//Version 4.5.0
 
 /**    DOC :
   https://www.kizeoforms.com/doc/swagger/v3/#/
@@ -121,6 +121,36 @@ const CONFIG_HEADERS = [
 const CONFIG_DISPLAY_HEADER = ['Paramètre', 'Valeur'];
 const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'action'];
 const MAX_BQ_TABLE_NAME_LENGTH = 128;
+
+const SHEET_CONFIG_SERVICE = libKizeo.SheetConfigHelpers.create({
+  requiredKeys: REQUIRED_CONFIG_KEYS,
+  configHeaders: CONFIG_HEADERS,
+  batchLimitKey: CONFIG_BATCH_LIMIT_KEY,
+  ingestFlagKey: CONFIG_INGEST_BIGQUERY_KEY,
+  defaultBatchLimit: DEFAULT_KIZEO_BATCH_LIMIT,
+  sanitizeBatchLimitValue: sanitizeBatchLimitValue,
+  sanitizeBooleanFlag: sanitizeBooleanConfigFlag,
+  getConfiguredBatchLimit: getConfiguredBatchLimit,
+  computeTableName: function (formId, formName, candidate) {
+    return libKizeo.bqComputeTableName(formId, formName, candidate);
+  },
+  maxTableNameLength: MAX_BQ_TABLE_NAME_LENGTH,
+  applyLayout: function (sheet, rowCount, rowIndexMap) {
+    if (
+      typeof libKizeo !== 'undefined' &&
+      libKizeo.SheetInterfaceHelpers &&
+      typeof libKizeo.SheetInterfaceHelpers.applyConfigLayout === 'function'
+    ) {
+      libKizeo.SheetInterfaceHelpers.applyConfigLayout(sheet, rowCount, {
+        headerLabels: CONFIG_DISPLAY_HEADER,
+        rowIndexMap: rowIndexMap,
+        triggerOptions: TRIGGER_OPTIONS,
+        batchLimitKey: CONFIG_BATCH_LIMIT_KEY,
+        ingestFlagKey: CONFIG_INGEST_BIGQUERY_KEY
+      });
+    }
+  }
+});
 
 function sanitizeTriggerFrequency(raw) {
   if (raw === null || raw === undefined) return DEFAULT_TRIGGER_FREQUENCY;
@@ -357,16 +387,7 @@ Location=${finalLocation || 'default'}`
  * @return {string} id du sous‑dossier
  */
 function getOrCreateSubFolder(parentFolderId, subFolderName) {
-  const parent = DriveApp.getFolderById(parentFolderId);
-  const it = parent.getFoldersByName(subFolderName);
-  // Vérifie si un dossier avec ce nom existe déjà
-  if (it.hasNext()) {
-    // Si oui, retourne l'ID du dossier existant
-    return it.next().getId();
-  } else {
-    // Sinon, crée un nouveau dossier et retourne son ID
-    return parent.createFolder(subFolderName).getId();
-  }
+  return libKizeo.SheetDriveExports.getOrCreateSubFolder(parentFolderId, subFolderName);
 }
 
 /**
@@ -375,30 +396,14 @@ function getOrCreateSubFolder(parentFolderId, subFolderName) {
  * @return {string}
  */
 function buildMediaDisplayName(media) {
-  const baseName = media.name || media.fileName || `media_${media.dataId || 'unknown'}`;
-  const driveId = media.driveFileId || '';
-  if (!driveId) {
-    return baseName;
-  }
-  const sanitizedId = driveId.replace(/[^A-Za-z0-9_-]/g, '');
-  if (!sanitizedId || baseName.indexOf(sanitizedId) !== -1) {
-    return baseName;
-  }
-  return `${baseName}__${sanitizedId}`;
+  return libKizeo.SheetDriveExports.buildMediaDisplayName(media);
 }
 
 /**
  * Sauvegarde un blob PDF dans un dossier cible.
  */
 function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
-  const fileName = `${formulaireNom}_${dataId}_${new Date()
-    .toISOString()
-    .replace(/[:.]/g, '-')}`;
-  try {
-    libKizeo.DriveMediaService.getDefault().saveBlobToFolder(pdfBlob, targetFolderId, fileName);
-  } catch (driveError) {
-    libKizeo.handleException('exportPdfBlob.saveBlobToFolder', driveError, { targetFolderId, fileName });
-  }
+  libKizeo.SheetDriveExports.exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId);
 }
 
 /**
@@ -406,237 +411,19 @@ function exportPdfBlob(formulaireNom, dataId, pdfBlob, targetFolderId) {
  * Un média est considéré comme déjà présent s'il existe un fichier du même nom dans le dossier cible.
  */
 function exportMedias(mediaList, targetFolderId) {
-  if (!mediaList?.length) return;
-
-  const mediaFolderId = getOrCreateSubFolder(targetFolderId, 'media');
-  const mediaFolder = DriveApp.getFolderById(mediaFolderId);
-
-  mediaList.forEach((m) => {
-    try {
-      const displayName = buildMediaDisplayName(m);
-
-      const candidateId = m.driveFileId || '';
-      if (!candidateId && !m.id) {
-        console.log(`ID manquant pour le média ${displayName}`);
-        return;
-      }
-
-      // Extraire l'ID du fichier de la formule HYPERLINK si aucun ID dédié n'est présent
-      let fileId = candidateId;
-      if (!fileId && typeof m.id === 'string' && m.id.includes('id=')) {
-        fileId = m.id.split('id=')[1].split('"')[0];
-      }
-
-      if (!fileId && typeof m.driveUrl === 'string' && m.driveUrl.includes('id=')) {
-        fileId = m.driveUrl.split('id=')[1].split('&')[0];
-      }
-
-      if (!fileId) {
-        console.log(`Impossible de déterminer l'ID Drive pour ${displayName}`);
-        return;
-      }
-
-      const alreadyThere = mediaFolder.getFilesByName(displayName);
-      if (alreadyThere.hasNext()) return;
-
-      const file = DriveApp.getFileById(fileId);
-      file.makeCopy(displayName, mediaFolder);
-      
-    } catch (e) {
-      // Utiliser m.id au lieu de fileId qui pourrait ne pas être défini en cas d'erreur précoce
-      console.log(`Erreur copie média ${m.name || m.fileName} : ${e.message}\nID original: ${m.driveFileId || m.id}`);
-    }
-  });
+  libKizeo.SheetDriveExports.exportMedias(mediaList, targetFolderId);
 }
 
 function readFormConfigFromSheet(sheet) {
-  if (!sheet) return {};
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    return {};
-  }
-  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-  const config = {};
-  values.forEach((row) => {
-    const key = row[0];
-    if (!key) return;
-    config[String(key).trim()] = row[1];
-  });
-  return config;
+  return SHEET_CONFIG_SERVICE.readConfigFromSheet(sheet);
 }
 
 function writeFormConfigToSheet(sheet, config) {
-  if (!sheet) return;
-  const existingRowCount = Math.max(sheet.getLastRow() - 1, 0);
-  if (existingRowCount > 0) {
-    sheet.getRange(2, 1, existingRowCount, 2).clearContent();
-  }
-
-  const entries = new Map();
-  const rowIndexMap = {};
-  if (config && typeof config === 'object') {
-    Object.keys(config).forEach((key) => {
-      const trimmedKey = String(key || '').trim();
-      if (!trimmedKey) return;
-      entries.set(trimmedKey, config[key]);
-    });
-  }
-
-  entries.delete('bq_alias');
-
-  const rows = [];
-  CONFIG_HEADERS.forEach((header) => {
-    const value = entries.has(header) ? entries.get(header) : '';
-    rowIndexMap[header] = rows.length;
-    rows.push([header, value]);
-    entries.delete(header);
-  });
-  entries.forEach((value, key) => {
-    rowIndexMap[key] = rows.length;
-    rows.push([key, value]);
-  });
-
-  if (rows.length) {
-    sheet.getRange(2, 1, rows.length, 2).setValues(rows);
-  }
-
-  applyConfigSheetLayout(sheet, rows.length, rowIndexMap);
-}
-
-/**
- * Améliore la lisibilité de l'onglet de configuration en appliquant un format cohérent
- * et des aides à la saisie (bandes alternées, gel de la ligne d'entête, validations).
- *
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet - Feuille de configuration active.
- * @param {number} rowCount - Nombre de lignes de données écrites (hors entête).
- * @param {Object} rowIndexMap - Association clé -> index (0-based) dans les lignes écrites.
- */
-function applyConfigSheetLayout(sheet, rowCount, rowIndexMap) {
-  if (!sheet) return;
-
-  const expectedHeader = CONFIG_DISPLAY_HEADER;
-  const headerRange = sheet.getRange(1, 1, 1, 2);
-  const headerValues = headerRange.getValues();
-  if (
-    !headerValues ||
-    headerValues.length === 0 ||
-    headerValues[0][0] !== expectedHeader[0] ||
-    headerValues[0][1] !== expectedHeader[1]
-  ) {
-    headerRange.setValues([expectedHeader]);
-  }
-
-  sheet.setFrozenRows(1);
-  sheet.setFrozenColumns(1);
-  sheet.setColumnWidth(1, 220);
-  sheet.setColumnWidth(2, 360);
-
-  const totalRows = Math.max(rowCount + 1, 2);
-  const tableRange = sheet.getRange(1, 1, totalRows, 2);
-
-  sheet.getBandings().forEach((banding) => {
-    if (banding.getRange().getSheet().getSheetId() === sheet.getSheetId()) {
-      banding.remove();
-    }
-  });
-
-  const banding = tableRange.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY);
-  banding.setHeaderRowColor('#1a73e8');
-  banding.setFirstRowColor('#ffffff');
-  banding.setSecondRowColor('#f5f5f5');
-
-  headerRange
-    .setFontWeight('bold')
-    .setFontColor('#ffffff')
-    .setHorizontalAlignment('left')
-    .setVerticalAlignment('middle')
-    .setWrap(false);
-
-  if (rowCount > 0) {
-    const keysRange = sheet.getRange(2, 1, rowCount, 1);
-    keysRange.setFontWeight('bold').setFontColor('#174ea6').setWrap(false);
-
-    const valuesRange = sheet.getRange(2, 2, rowCount, 1);
-    valuesRange.setWrap(true).setHorizontalAlignment('left').setVerticalAlignment('middle');
-  }
-
-  tableRange.setBorder(true, true, true, true, true, true, '#dadce0', SpreadsheetApp.BorderStyle.SOLID);
-
-  const existingFilter = sheet.getFilter();
-  if (existingFilter && existingFilter.getRange().getSheet().getSheetId() === sheet.getSheetId()) {
-    existingFilter.remove();
-  }
-  if (rowCount > 0) {
-    tableRange.createFilter();
-  }
-
-  applyConfigSheetValidations(sheet, rowIndexMap || {});
-}
-
-/**
- * Ajoute des validations et aides contextuelles sur les cellules clés de la configuration.
- *
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet - Feuille de configuration active.
- * @param {Object} rowIndexMap - Association clé -> index (0-based) dans les lignes écrites.
- */
-function applyConfigSheetValidations(sheet, rowIndexMap) {
-  if (!sheet) return;
-  if (!rowIndexMap || typeof rowIndexMap !== 'object') return;
-
-  if (Object.prototype.hasOwnProperty.call(rowIndexMap, CONFIG_BATCH_LIMIT_KEY)) {
-    const rowNumber = rowIndexMap[CONFIG_BATCH_LIMIT_KEY] + 2;
-    const range = sheet.getRange(rowNumber, 2);
-    const validation = SpreadsheetApp.newDataValidation()
-      .requireNumberBetween(1, 5000)
-      .setAllowInvalid(false)
-      .setHelpText('Saisir un entier positif (1 à 5000) pour limiter le volume ingéré par lot Kizeo.')
-      .build();
-    range.setDataValidation(validation);
-    range.setNumberFormat('0');
-  }
-
-  if (Object.prototype.hasOwnProperty.call(rowIndexMap, CONFIG_INGEST_BIGQUERY_KEY)) {
-    const rowNumber = rowIndexMap[CONFIG_INGEST_BIGQUERY_KEY] + 2;
-    const range = sheet.getRange(rowNumber, 2);
-    const validation = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['true', 'false'], true)
-      .setAllowInvalid(false)
-      .setHelpText("true = ingestion BigQuery active. false = suspension temporaire de l'écriture.")
-      .build();
-    range.setDataValidation(validation);
-    range.setHorizontalAlignment('center');
-  }
-
-  if (Object.prototype.hasOwnProperty.call(rowIndexMap, 'trigger_frequency')) {
-    const rowNumber = rowIndexMap.trigger_frequency + 2;
-    const range = sheet.getRange(rowNumber, 2);
-    const listValues = ['none'].concat(Object.keys(TRIGGER_OPTIONS));
-    const validation = SpreadsheetApp.newDataValidation()
-      .requireValueInList(listValues, true)
-      .setAllowInvalid(true)
-      .setHelpText(
-        "Sélectionner une fréquence standard (M1, H1, H24…) ou saisir un code personnalisé (ex. H24@06 ou WD1@MON@08)."
-      )
-      .build();
-    range.setDataValidation(validation);
-    range.setNote(
-      'Utiliser le menu "Configuration Kizeo" pour régler le déclencheur ou saisir un code H24@HH / WD1@JOUR@HH.'
-    );
-  }
+  SHEET_CONFIG_SERVICE.writeConfigToSheet(sheet, config);
 }
 
 function resolveFormulaireContext(spreadsheetBdD) {
-  const sheet = spreadsheetBdD.getActiveSheet();
-  if (!sheet) {
-    return null;
-  }
-  const config = readFormConfigFromSheet(sheet) || {};
-  return {
-    sheet,
-    config,
-    batchLimit: getConfiguredBatchLimit(config)
-  };
+  return SHEET_CONFIG_SERVICE.resolveFormContext(spreadsheetBdD);
 }
 
 function createActionCode() {
@@ -646,174 +433,11 @@ function createActionCode() {
 }
 
 function validateFormConfig(rawConfig, sheet) {
-  const config = rawConfig || {};
-  const errors = [];
-  const sanitized = {};
-
-  REQUIRED_CONFIG_KEYS.forEach((key) => {
-    const rawValue = config[key];
-    const value = rawValue !== undefined && rawValue !== null ? String(rawValue).trim() : '';
-    if (!value) {
-      errors.push({ key, message: `Champ ${key} manquant ou vide.` });
-    } else {
-      sanitized[key] = value;
-    }
-  });
-
-  const rawBatchLimit = config[CONFIG_BATCH_LIMIT_KEY];
-  const sanitizedBatchLimit = sanitizeBatchLimitValue(rawBatchLimit);
-  if (
-    rawBatchLimit !== undefined &&
-    rawBatchLimit !== null &&
-    rawBatchLimit !== '' &&
-    sanitizedBatchLimit === null
-  ) {
-    errors.push({ key: CONFIG_BATCH_LIMIT_KEY, message: 'batch_limit doit être un entier positif.' });
-  } else {
-    sanitized[CONFIG_BATCH_LIMIT_KEY] =
-      sanitizedBatchLimit !== null ? sanitizedBatchLimit : DEFAULT_KIZEO_BATCH_LIMIT;
-  }
-
-  sanitized[CONFIG_INGEST_BIGQUERY_KEY] = sanitizeBooleanConfigFlag(
-    config[CONFIG_INGEST_BIGQUERY_KEY],
-    true
-  );
-
-  const tableNameCandidate =
-    config.bq_table_name !== undefined && config.bq_table_name !== null
-      ? String(config.bq_table_name).trim()
-      : config.bq_alias !== undefined && config.bq_alias !== null
-      ? String(config.bq_alias).trim()
-      : '';
-
-  const formIdForTable = sanitized.form_id || (config.form_id ? String(config.form_id).trim() : '');
-  const formNameForTable = sanitized.form_name || (config.form_name ? String(config.form_name).trim() : '');
-
-  let computedTableName = '';
-  try {
-    computedTableName = libKizeo.bqComputeTableName(formIdForTable, formNameForTable, tableNameCandidate);
-  } catch (computeError) {
-    console.log(`validateFormConfig: échec calcul table -> ${computeError}`);
-  }
-
-  if (!computedTableName) {
-    errors.push({ key: 'bq_table_name', message: 'bq_table_name manquant ou invalide.' });
-  } else {
-    if (computedTableName.length > MAX_BQ_TABLE_NAME_LENGTH) {
-      errors.push({
-        key: 'bq_table_name',
-        message: `bq_table_name doit contenir ${MAX_BQ_TABLE_NAME_LENGTH} caractères maximum.`
-      });
-    } else {
-      sanitized.bq_table_name = computedTableName;
-    }
-  }
-
-  return {
-    isValid: errors.length === 0,
-    config: sanitized,
-    errors,
-    sheetName: sheet ? sheet.getName() : ''
-  };
+  return SHEET_CONFIG_SERVICE.validateConfig(rawConfig, sheet);
 }
 
 function notifyConfigErrors(validation) {
-  const lines = validation.errors.map((error) => `• ${error.message}`).join('\n');
-  const message = `${validation.sheetName ? validation.sheetName + '\n' : ''}${lines}`;
-
-  try {
-    const ui = SpreadsheetApp.getUi();
-    ui.alert('Configuration invalide', message, ui.ButtonSet.OK);
-  } catch (uiError) {
-    try {
-      const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-      spreadsheet.toast(message, 'Configuration invalide', 10);
-    } catch (toastError) {
-      console.log(`Impossible d'afficher une alerte UI: ${toastError}`);
-    }
-  }
-
-  console.log(`Configuration invalide détectée: ${message}`);
-}
-
-function ensureBigQueryConfigAvailability(ingestFlag, sheetName) {
-  if (ingestFlag === 'false') {
-    return true;
-  }
-  if (typeof libKizeo === 'undefined' || typeof libKizeo.getBigQueryConfig !== 'function') {
-    return true;
-  }
-  try {
-    libKizeo.getBigQueryConfig({ throwOnMissing: true });
-    return true;
-  } catch (configError) {
-    const missingKeys = Array.isArray(configError.missingKeys) && configError.missingKeys.length
-      ? configError.missingKeys.join(', ')
-      : 'BQ_PROJECT_ID / BQ_DATASET';
-    const message =
-      `Configuration BigQuery incomplète (${missingKeys}).\n` +
-      'Utilisez le menu « Configurer BigQuery » avant de relancer le traitement.';
-    try {
-      const ui = SpreadsheetApp.getUi();
-      if (ui) {
-        ui.alert('Configuration BigQuery manquante', message, ui.ButtonSet.OK);
-      }
-    } catch (uiError) {
-      try {
-        const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-        if (spreadsheet) {
-          spreadsheet.toast(message, 'Configuration BigQuery', 10);
-        }
-      } catch (toastError) {
-        console.log(`ensureBigQueryConfigAvailability: notification impossible -> ${toastError}`);
-      }
-    }
-    try {
-      libKizeo.handleException('main.BigQueryConfig', configError, {
-        missingKeys: missingKeys,
-        sheet: sheetName || ''
-      });
-    } catch (handleError) {
-      console.log(`ensureBigQueryConfigAvailability: handleException KO -> ${handleError}`);
-    }
-    return false;
-  }
-}
-
-function notifyExecutionAlreadyRunning(options) {
-  const opts = options || {};
-  const toastMessage =
-    opts.toastMessage ||
-    "Une mise à jour est déjà en cours. Patientez avant de relancer ou exécutez setScriptProperties('termine').";
-  const alertMessage =
-    opts.alertMessage ||
-    "Une mise à jour est déjà en cours. Patientez avant de relancer.\nEn cas de blocage, réinitialisez l'état manuellement ou exécutez setScriptProperties('termine').";
-  const toastDuration = Number.isFinite(opts.toastSeconds) ? Math.max(1, Number(opts.toastSeconds)) : 10;
-  if (opts.showToast !== false) {
-    try {
-      const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-      if (spreadsheet) {
-        spreadsheet.toast(toastMessage, 'Mise à jour en cours', toastDuration);
-      }
-    } catch (toastError) {
-      console.log(`notifyExecutionAlreadyRunning: toast KO -> ${toastError}`);
-    }
-  }
-
-  if (opts.showAlert !== false) {
-    try {
-      const ui = SpreadsheetApp.getUi();
-      if (ui) {
-        ui.alert('Mise à jour en cours', alertMessage, ui.ButtonSet.OK);
-      }
-    } catch (uiError) {
-      console.log(`notifyExecutionAlreadyRunning: alerte UI indisponible -> ${uiError}`);
-    }
-  }
-
-  if (opts.shouldThrow) {
-    throw new Error(opts.errorMessage || 'EXECUTION_EN_COURS');
-  }
+  SHEET_CONFIG_SERVICE.notifyConfigErrors(validation);
 }
 
 /**
@@ -855,7 +479,9 @@ function main(options) {
       notifyOptions.shouldThrow = true;
       notifyOptions.errorMessage = 'EXECUTION_EN_COURS';
     }
-    notifyExecutionAlreadyRunning(notifyOptions);
+    if (typeof libKizeo !== 'undefined' && libKizeo.SheetInterfaceHelpers) {
+      libKizeo.SheetInterfaceHelpers.notifyExecutionAlreadyRunning(notifyOptions);
+    }
     console.log('Exécution précédente toujours en cours.');
     console.log("En cas de blocage, réinitialisez l'état manuellement ou exécutez setScriptProperties('termine').");
     return;
@@ -883,7 +509,12 @@ function main(options) {
     const batchLimit = context.batchLimit || DEFAULT_KIZEO_BATCH_LIMIT;
     const action = validation.config.action;
     const ingestFlag = validation.config[CONFIG_INGEST_BIGQUERY_KEY];
-    if (!ensureBigQueryConfigAvailability(ingestFlag, context.sheet ? context.sheet.getName() : '')) {
+    if (
+      !libKizeo.SheetInterfaceHelpers.ensureBigQueryConfigAvailability(
+        ingestFlag,
+        context.sheet ? context.sheet.getName() : ''
+      )
+    ) {
       return;
     }
 
@@ -1059,7 +690,12 @@ function runBigQueryDeduplication() {
       message: "L'ingestion BigQuery est désactivée pour ce formulaire."
     };
   }
-  if (!ensureBigQueryConfigAvailability(ingestFlag, context.sheet ? context.sheet.getName() : '')) {
+  if (
+    !libKizeo.SheetInterfaceHelpers.ensureBigQueryConfigAvailability(
+      ingestFlag,
+      context.sheet ? context.sheet.getName() : ''
+    )
+  ) {
     return {
       status: 'ERROR',
       reason: 'MISSING_BIGQUERY_CONFIG',

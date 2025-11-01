@@ -9,21 +9,23 @@
 ## 2. Cible proposée
 
 ### Statut au 30/10/2025
-- ✅ `api` : `lib/KizeoClient.js` opérationnel, `lib/APIHandler.js` agit en wrapper de compatibilité.
+- ✅ `api` : `lib/KizeoClient.js` opérationnel, accès direct via `requeteAPIDonnees` (plus de wrapper `APIHandler`).
 - ✅ `ingest` : `lib/bigquery/ingestion.js` expose toutes les primitives (ensure/ingest/audit/dedup) consommées via `createIngestionServices()`.
 - ✅ `media` : `lib/DriveMediaService.js` centralise le traitement Drive (processField, saveBlobToFolder, caches).
-- ✅ `orchestration` : `lib/ProcessManager.js` regroupe `processData`, `handleResponses` et la collecte d’artefacts.
-- ✅ `sync` : `lib/ListesExternes.js` reste autonome.
+- ✅ `orchestration` : `lib/ProcessManager.js` regroupe `processData`, `handleResponses` et la collecte d’artefacts ; la préparation BigQuery et la construction du résultat sont désormais isolées via `ensureBigQueryForForm`, `prepareFormulaireForRun` et `buildProcessResult`.
+- ✅ `sync` : `lib/ExternalListsService.js` reste autonome.
 - ✅ `external-lists` : script “MAJ Listes Externes” documenté, consomme les services exposés (`processData`, `ExternalListsService`).
 
 | Module | Fichier(s) suggérés | Responsabilité principale |
 |--------|--------------------|----------------------------|
-| `api` | `lib/KizeoClient.js`, `lib/APIHandler.js` (wrapper) | Communication Kizeo (HTTP, token, retries) |
-| `ingest` | `lib/bigquery/ingestion.js`, `lib/0_Data.ingest*` | Préparation et écriture BigQuery (raw, parent, sous-formes, médias, audit) |
+| `api` | `lib/KizeoClient.js` | Communication Kizeo (HTTP, token, retries) |
+| `ingest` | `lib/backfill.js`, `lib/bigquery/ingestion.js`, `lib/process/*.js` | Préparation et écriture BigQuery (raw, parent, sous-formes, médias, audit) |
 | `media` | `lib/DriveMediaService.js` | Gestion Drive des médias (downloading, stockage) |
-| `orchestration` | `lib/ProcessManager.js` (nouveau) | `processData`, `handleResponses`, triggers, gestion des erreurs |
-| `sync` | `lib/ListesExternes.js` | Mise à jour listes externes / autres systèmes |
-| `external-lists` (script dédié) | `lib/ListesExternes.js` (expose `ExternalListsService`), `MAJ Listes Externes/*` | Synchronisation listes Kizeo (`updateFromSnapshot`), UI Google Sheets + exports Drive spécifiques (autonome, consomme `processData` et `buildRowSnapshot`). |
+| `orchestration` | `lib/ProcessManager.js` | `processData`, `handleResponses`, triggers, gestion des erreurs |
+| `sync` | `lib/ExternalListsService.js` | Mise à jour listes externes / autres systèmes |
+| `sheet-ui` | `lib/SheetInterfaceHelpers.js` | Mise en forme des onglets de configuration, notifications d’exécution, garde-fous BigQuery |
+| `sheet-config` | `lib/SheetConfigHelpers.js` | Lecture/écriture/validation de la configuration Sheets, résolution du contexte formulaire |
+| `external-lists` (script dédié) | `lib/ExternalListsService.js`, `MAJ Listes Externes/*` | Synchronisation listes Kizeo (`updateFromSnapshot`), UI Google Sheets + exports Drive spécifiques (autonome, consomme `processData` et `buildRowSnapshot`). |
 
 ## 3. Étapes recommandées
 
@@ -37,10 +39,9 @@
    - `lib/DriveMediaService.js` remplace l’ancien couple `Images.js` / `SheetSnapshot`.
 
 4. **Séparer `processData`**
-   - `fetchUnreadResponses(formulaire, action, services)` → module API.
-   - `ingestResponses(formulaire, payload, services)` → module ingestion.
-   - `finalizeRun(formulaire, context)` → module orchestration (mark-as-read, listes externes, logs).
-   - Fournir un adaptateur explicite pour le projet externe « MAJ Listes Externes » afin qu’il consomme l’API sans dépendre du code legacy désactivé.
+   - ✅ Préparation BigQuery et agrégation des résultats déléguées à `ensureBigQueryForForm` / `buildProcessResult`.
+   - ☐ Finaliser la découpe en modules indépendants (`fetchUnreadResponses`, `ingestResponses`, `finalizeRun`) pour alléger davantage `ProcessManager`.
+   - ☐ Fournir un adaptateur explicite pour le projet externe « MAJ Listes Externes » afin qu’il consomme l’API sans dépendre du code legacy désactivé.
 
 5. **Adapter les tests**
    - Créer des tests ciblés par module (ex. `api/KizeoClientTests.gs`, `SheetSnapshotTests.gs`).

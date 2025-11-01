@@ -10,7 +10,10 @@
 
 ### État des travaux (30/10/2025)
 - **Modularisation** :
-  - Client API Kizeo isolé dans `lib/KizeoClient.js` (ancien `APIHandler` inchangé pour compatibilité).
+  - Client API Kizeo isolé dans `lib/KizeoClient.js`; les anciens wrappers (`APIHandler`) ont été retirés au profit d’un accès direct.
+  - Orchestration simplifiée : `lib/ProcessManager.js` prépare le formulaire, assure BigQuery et finalise l’exécution via des étapes dédiées (`prepareFormulaireForRun`, `ensureBigQueryForForm`, `handleResponses`).
+  - Helpers UI partagés : `lib/SheetInterfaceHelpers.js` centralise la mise en forme des onglets de configuration, les notifications d’exécution en cours et la vérification BigQuery.
+  - Helpers configuration : `lib/SheetConfigHelpers.js` mutualise lecture/écriture/validation de la feuille `Config` et le calcul du contexte formulaire.
 - Service BigQuery exposé directement via `lib/bigquery/ingestion.js` (toutes les fonctions sont globales).
   - Gestion Drive centralisée dans `lib/DriveMediaService.js`; `FormResponseSnapshot` appelle le service sans wrapper intermédiaire.
   - Les scripts liés consomment désormais les fonctions globales (`processData`, `requeteAPIDonnees`, `ensureBigQueryCoreTables`, …) sans alias.
@@ -28,10 +31,14 @@
 ## Repository structure
 
 - `lib/` — main modules:
-- `bigquery/ingestion.js`: BigQuery ingestion logic.
-  - `APIHandler.js`: Kizeo API calls.
-  - `Outils.js`: utilities for synchronising data with Sheets.
+  - `0_Data.js`: agrégateur `libKizeo` et constantes partagées.
+  - `backfill.js`: exécution des backfills BigQuery (lecture Kizeo `data/all`).
+  - `bigquery/ingestion.js`: BigQuery ingestion logic.
+  - `process/`: orchestration (`collector`, `unread`, `external-lists`, `utils`).
+  - `KizeoClient.js`: client HTTP Kizeo (token, retries).
   - `DriveMediaService.js`: Drive media/download helpers (processField, saveBlobToFolder).
+  - `ExternalListsService.js`: synchronisation des listes externes Kizeo.
+  - `Outils.js`: utilities for synchronising data with Sheets.
 - `sheetInterface/` — bound script and UI:
   - `UI.js`, `timeIntervalSelector.html`: menus, dialogs and triggers.
 - `zz_*.js` — exploratory code and manual test harnesses.
