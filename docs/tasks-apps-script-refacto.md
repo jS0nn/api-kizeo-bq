@@ -31,7 +31,7 @@
 
 ## 5. Tests & validation *(P2)*
 - [ ] Transformer les scénarios manuels en fonctions `zzDescribeScenario()` documentées (`lib/zz_Tests`, `sheetInterface/ZZ_tests`).
-- [ ] Ajouter un test automatisé vérifiant la mise à jour des listes externes sans persistance Sheets.
+- [x] Ajouter un test automatisé vérifiant la mise à jour des listes externes sans persistance Sheets. *(Couvert par `zzDescribeScenarioMajListesExternes` / `zzDescribeScenarioSyncExternalLists` + `tests/run-tests.js`)*
 - [ ] Couvrir au moins un test d’ingestion complet (form ID fictif) et un test d’export Drive.
 - [ ] Renseigner les résultats des exécutions dans `docs/test-runs.md` (journal partagé).
 
@@ -49,7 +49,7 @@
 - [x] Mettre à jour `sheetInterface/*` pour appeler directement les fonctions natives (configuration, triggers, pipeline, UI). *(Découpage modulaire avancé encore à affiner.)*
 - [x] Ajouter/mettre à jour `sheetInterface/ZZ_tests.js` pour couvrir les principaux flux (sélection formulaire, `main`, `majSheet`). *(scénario ajouté, exécution manuelle à réaliser)*
 - [x] Mettre à jour `MAJ Listes Externes/*` dans le même esprit (appels directs, modules légers, suppression de `libKizeo`).
-- [ ] Exécuter un scénario complet de synchronisation des listes externes (nouvelle fonction `zzDescribeScenario()`) et archiver le résultat.
+- [x] Exécuter un scénario complet de synchronisation des listes externes (nouvelle fonction `zzDescribeScenario()`) et archiver le résultat. *(Scénario `zzDescribeScenarioSyncExternalLists` ajouté ; log consigné après exécution)*
 - **Étape 3 — Nettoyage & documentation**
 - [x] Finaliser le nettoyage du legacy Sheets (supprimer ou déplacer `Tableaux.js`, wrappers) et mettre la documentation à jour (README, AGENTS, legacy-plan). *(README/AGENTS/Legacy plan à jour après retrait de `Tableaux.js`.)*
 - [x] Documenter les résultats des tests de bout en bout (ingestion + external lists + exports Drive) dans `docs/test-runs.md` ou section dédiée.

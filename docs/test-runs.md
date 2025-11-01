@@ -41,8 +41,9 @@
 - Observations : scripts `sheetInterface` et `MAJ Listes Externes` appellent désormais la librairie via `libKizeo.*` ; suppression des alias globaux `00_libGlobals.js`.
 
 ## 2025-11-01 — Helpers config/Drive mutualisés
-- Fonctions : `node tests/run-tests.js`, `zzDescribeScenarioSheetInterface`.
+- Fonctions : `node tests/run-tests.js`, `zzDescribeScenarioSheetInterface`, `zzDescribeScenarioSyncExternalLists`.
 - Résultat :
   - ✅ `node tests/run-tests.js` — nouvelles couvertures (`SheetInterfaceHelpers`, `SheetConfigHelpers`, `SheetDriveExports`, scénarios `processData`).
   - ✅ `zzDescribeScenarioSheetInterface` — `{"isValid":true,"tableName":"formulaire_sc_nario_form_scenario","batchLimit":15,"availability":true}` (utilise `SheetConfigHelpers`).
+- ✅ `zzDescribeScenarioSyncExternalLists` — `{"configValid":true,"validationErrors":[],"external":{"status":"Mise A Jour OK","putCalls":1,"samplePayload":{"items":["id:id|champ:champ","rec-000:rec-000|Valeur mise à jour:Valeur mise à jour"]}}}`.
 - Observations : `lib/SheetConfigHelpers.js` + `lib/SheetDriveExports.js` alimentent les deux scripts Sheets (config + exports Drive) ; plus de duplication locale et notifications/verrous alignés.

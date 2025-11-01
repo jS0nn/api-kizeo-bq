@@ -187,3 +187,40 @@ function zzDescribeScenarioMajListesExternes() {
   Logger.log(`zzDescribeScenarioMajListesExternes -> ${JSON.stringify(summary)}`);
   return summary;
 }
+
+function zzDescribeScenarioSyncExternalLists() {
+  if (typeof validateFormConfig !== 'function') {
+    throw new Error('validateFormConfig requis pour zzDescribeScenarioSyncExternalLists.');
+  }
+
+  const fakeSheet = {
+    getName: () => 'Config (scénario)',
+    getLastRow: () => 2,
+    getRange: () => ({
+      setValues: () => {},
+      clearContent: () => {},
+      getValues: () => [['Paramètre', 'Valeur']]
+    })
+  };
+
+  const validation = validateFormConfig(
+    {
+      form_id: 'FORM_SYNC',
+      form_name: 'Formulaire Sync',
+      action: 'ACTION_SYNC',
+      bq_table_name: 'form_sync',
+      [CONFIG_BATCH_LIMIT_KEY]: '10',
+      [CONFIG_INGEST_BIGQUERY_KEY]: 'true'
+    },
+    fakeSheet
+  );
+
+  const external = zzDescribeScenarioMajListesExternes();
+  const summary = {
+    configValid: validation.isValid,
+    validationErrors: validation.errors,
+    external
+  };
+  Logger.log(`zzDescribeScenarioSyncExternalLists -> ${JSON.stringify(summary)}`);
+  return summary;
+}

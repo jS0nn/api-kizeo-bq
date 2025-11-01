@@ -122,6 +122,36 @@ const CONFIG_DISPLAY_HEADER = ['Paramètre', 'Valeur'];
 const REQUIRED_CONFIG_KEYS = ['form_id', 'form_name', 'action'];
 const MAX_BQ_TABLE_NAME_LENGTH = 128;
 
+const SHEET_CONFIG_SERVICE = libKizeo.SheetConfigHelpers.create({
+  requiredKeys: REQUIRED_CONFIG_KEYS,
+  configHeaders: CONFIG_HEADERS,
+  batchLimitKey: CONFIG_BATCH_LIMIT_KEY,
+  ingestFlagKey: CONFIG_INGEST_BIGQUERY_KEY,
+  defaultBatchLimit: DEFAULT_KIZEO_BATCH_LIMIT,
+  sanitizeBatchLimitValue: sanitizeBatchLimitValue,
+  sanitizeBooleanFlag: sanitizeBooleanConfigFlag,
+  getConfiguredBatchLimit: getConfiguredBatchLimit,
+  computeTableName: function (formId, formName, candidate) {
+    return libKizeo.bqComputeTableName(formId, formName, candidate);
+  },
+  maxTableNameLength: MAX_BQ_TABLE_NAME_LENGTH,
+  applyLayout: function (sheet, rowCount, rowIndexMap) {
+    if (
+      typeof libKizeo !== 'undefined' &&
+      libKizeo.SheetInterfaceHelpers &&
+      typeof libKizeo.SheetInterfaceHelpers.applyConfigLayout === 'function'
+    ) {
+      libKizeo.SheetInterfaceHelpers.applyConfigLayout(sheet, rowCount, {
+        headerLabels: CONFIG_DISPLAY_HEADER,
+        rowIndexMap: rowIndexMap,
+        triggerOptions: TRIGGER_OPTIONS,
+        batchLimitKey: CONFIG_BATCH_LIMIT_KEY,
+        ingestFlagKey: CONFIG_INGEST_BIGQUERY_KEY
+      });
+    }
+  }
+});
+
 function sanitizeTriggerFrequency(raw) {
   if (raw === null || raw === undefined) return DEFAULT_TRIGGER_FREQUENCY;
   const stringValue = raw.toString().trim();
