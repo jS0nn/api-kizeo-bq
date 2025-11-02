@@ -23,7 +23,7 @@
   - Suppression des modules legacy `lib/Tableaux.js`, `lib/SheetSnapshot.js`, `lib/Images.js`.
 - **createIngestionServices** renvoie désormais `{ fetch, now, logger, bigQuery, snapshot }`; `processData` consomme ces services.
 - **MAJ Listes Externes** reste pleinement compatible : elle continue d’appeler `processData` et reçoit les mêmes structures (`processResult.medias`, `latestRecord`, etc.).
-- **Tests** : `runAllTests()` passe (26/26). Les tests unitaires vérifient aussi les nouveaux services (snapshot) et la gestion des erreurs simulées.
+- **Tests** : `runAllTests()` passe (26/26). Les tests unitaires vérifient aussi les nouveaux services (snapshot) et la gestion des erreurs simulées. `tests/run-tests.js` couvre désormais les proxys `sheetInterface/Code.js` et `MAJ Listes Externes/Code.js` pour garantir l’appel direct à la librairie (plus de `SheetAppBindings`).
 - **Docs** :
   - `docs/legacy-deprecation-plan.md` décrit l’isolement du legacy et le cas particulier “MAJ Listes Externes”.
   - `docs/module-refactor-roadmap.md` détaille les prochaines étapes (orchestration, refactor triggers, documentation secrets).
@@ -98,6 +98,7 @@ There is no automated test runner. Manual harnesses live in `zz_Tests.js` (for t
 
 - Create targeted entry points in these files and name them `zzDescribeScenario()` to signal manual status.
 - Remove or disable these functions once validated.
+- Les scénarios Drive (`zzDescribeScenarioDriveExport`) utilisent automatiquement le dossier du projet (parent du script ou du classeur actif). Surcharger via `MANUAL_TEST_CONFIG.driveFolderId` si besoin.
 - To run a scenario remotely, execute:
 
 ```bash

@@ -25,6 +25,8 @@
 4. **Adapter les tests manuels**
    - Mettre à jour `sheetInterface/ZZ_tests.js` et `MAJ Listes Externes/ZZ_tests.js` afin d’utiliser directement `libKizeo.*` sans passer par la façade supprimée.
    - Vérifier que `tests/run-tests.js` n’a plus besoin de mocker `SheetAppBindings`.
+   - Encadrer les scénarios sensibles via `MANUAL_TEST_CONFIG` pour documenter les prérequis Drive. Par défaut, le dossier cible est déduit du projet courant (parent du script ou du classeur actif).
+   - Ajouter des tests automatisés garantissant que `sheetInterface/Code.js` et `MAJ Listes Externes/Code.js` délèguent bien leurs appels à la librairie (`tests/run-tests.js`).
 
 5. **Validation fonctionnelle**
    - `clasp push` sur chaque projet (`lib/`, `sheetInterface/`, `MAJ Listes Externes/`) après modifications.

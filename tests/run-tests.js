@@ -1058,6 +1058,309 @@ function testSheetDriveExportsBuildDisplayName() {
   assert.strictEqual(fallback, 'fallback', 'Sans ID Drive, le nom doit être inchangé');
 }
 
+function testResolveFormulaireDepuisSheet() {
+  const sheetCalls = [];
+  const context = createContext({
+    ScriptApp: {
+      getScriptId: () => 'SCRIPT_ID'
+    },
+    DriveApp: {
+      getFileById: () => ({
+        getParents: () => ({
+          hasNext: () => false,
+          next: () => ({ getId: () => 'unused' })
+        }),
+        getId: () => 'FILE_ID'
+      })
+    },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => ({
+        getId: () => 'SHEET_ID'
+      })
+    },
+    sheetConfig: {
+      readFormConfigFromSheet: (sheet) => {
+        sheetCalls.push(sheet);
+        return { form_id: 'FORM_CFG', form_name: 'Formulaire Config' };
+      }
+    }
+  });
+
+  runFile('sheetInterface/ZZ_tests.js', context);
+
+  const direct = context.resolveFormulaireDepuisSheet({
+    getName: () => 'Nom Form || FORM_ID'
+  });
+  assert.strictEqual(direct && direct.id, 'FORM_ID', 'Le format standard doit retourner le form_id');
+  assert.strictEqual(direct && direct.nom, 'Nom Form', 'Le format standard doit retourner le nom');
+
+  const fallback = context.resolveFormulaireDepuisSheet({
+    getName: () => 'Config'
+  });
+  assert.strictEqual(fallback && fallback.id, 'FORM_CFG', 'Le fallback config doit retourner form_id');
+  assert.strictEqual(fallback && fallback.nom, 'Formulaire Config', 'Le fallback config doit retourner form_name');
+  assert.strictEqual(sheetCalls.length, 1, 'sheetConfig.readFormConfigFromSheet doit être invoqué une fois');
+}
+
+function testResolveFormulaireDepuisSheetMaj() {
+  const sheetCalls = [];
+  const context = createContext({
+    ScriptApp: {
+      getScriptId: () => 'SCRIPT_ID'
+    },
+    DriveApp: {
+      getFileById: () => ({
+        getParents: () => ({
+          hasNext: () => false,
+          next: () => ({ getId: () => 'unused' })
+        }),
+        getId: () => 'FILE_ID'
+      })
+    },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => ({
+        getId: () => 'SHEET_ID'
+      })
+    },
+    majConfig: {
+      readFormConfigFromSheet: (sheet) => {
+        sheetCalls.push(sheet);
+        return { form_id: 'FORM_CFG', form_name: 'Formulaire Config MAJ' };
+      }
+    }
+  });
+
+  runFile('MAJ Listes Externes/ZZ_tests.js', context);
+
+  const direct = context.resolveFormulaireDepuisSheet({
+    getName: () => 'Nom MAJ || MAJ_ID'
+  });
+  assert.strictEqual(direct && direct.id, 'MAJ_ID', 'Le format standard MAJ doit retourner le form_id');
+  assert.strictEqual(direct && direct.nom, 'Nom MAJ', 'Le format standard MAJ doit retourner le nom');
+
+  const fallback = context.resolveFormulaireDepuisSheet({
+    getName: () => 'Config'
+  });
+  assert.strictEqual(fallback && fallback.id, 'FORM_CFG', 'Le fallback MAJ doit retourner form_id');
+  assert.strictEqual(fallback && fallback.nom, 'Formulaire Config MAJ', 'Le fallback MAJ doit retourner form_name');
+  assert.strictEqual(sheetCalls.length, 1, 'majConfig.readFormConfigFromSheet doit être invoqué une fois');
+}
+
+function testSheetInterfaceCodeDelegatesToPipeline() {
+  const driveCalls = [];
+  const pipelineCalls = [];
+  const context = createContext({
+    libKizeo: {
+      SheetDriveExports: {
+        getOrCreateSubFolder: (parent, name) => {
+          driveCalls.push({ fn: 'getOrCreateSubFolder', parent, name });
+          return 'child-folder';
+        },
+        buildMediaDisplayName: (media) => {
+          driveCalls.push({ fn: 'buildMediaDisplayName', media });
+          return 'display-name';
+        },
+        exportPdfBlob: () => driveCalls.push({ fn: 'exportPdfBlob' }),
+        exportMedias: () => driveCalls.push({ fn: 'exportMedias' })
+      }
+    },
+    sheetConfig: {
+      sanitizeBatchLimitValue: (raw) => `sanitized:${raw}`,
+      getConfiguredBatchLimit: (config) => ({ config }),
+      sanitizeBooleanConfigFlag: () => 'flag',
+      readFormConfigFromSheet: () => 'read',
+      writeFormConfigToSheet: () => 'write',
+      resolveFormulaireContext: () => ({ sheet: true }),
+      createActionCode: () => 'action-code',
+      validateFormConfig: () => ({ isValid: true, config: {} }),
+      notifyConfigErrors: () => 'notify',
+      getService: () => ({})
+    },
+    sheetTriggers: {
+      sanitizeTriggerFrequency: () => 'freq',
+      getTriggerOption: () => 'option',
+      describeTriggerOption: () => 'description',
+      configureTriggerFromKey: (key) => {
+        pipelineCalls.push({ fn: 'configureTriggerFromKey', key });
+        return { label: 'configured' };
+      },
+      parseCustomDailyHour: () => 10,
+      formatHourLabel: () => '10h00',
+      parseCustomWeekly: () => ({ dayCode: 'MON', hour: 8 }),
+      formatWeekdayLabel: () => 'lundi',
+      getStoredTriggerFrequency: () => 'H24',
+      setStoredTriggerFrequency: (key) => {
+        pipelineCalls.push({ fn: 'setStoredTriggerFrequency', key });
+        return key;
+      },
+      persistTriggerFrequencyToSheet: (key) => pipelineCalls.push({ fn: 'persistTriggerFrequencyToSheet', key }),
+      getTriggerOptions: () => ({ H24: {} })
+    },
+    sheetPipeline: {
+      onOpen: () => {
+        pipelineCalls.push({ fn: 'onOpen' });
+        return 'open';
+      },
+      setScriptProperties: (etat) => {
+        pipelineCalls.push({ fn: 'setScriptProperties', etat });
+        return etat;
+      },
+      getEtatExecution: () => {
+        pipelineCalls.push({ fn: 'getEtatExecution' });
+        return 'etat';
+      },
+      initBigQueryConfigFromSheet: () => {
+        pipelineCalls.push({ fn: 'initBigQueryConfigFromSheet' });
+        return 'init';
+      },
+      main: (options) => {
+        pipelineCalls.push({ fn: 'main', options });
+        return 'main-result';
+      },
+      runBigQueryDeduplication: () => {
+        pipelineCalls.push({ fn: 'runBigQueryDeduplication' });
+        return 'dedup-result';
+      },
+      launchManualDeduplication: () => {
+        pipelineCalls.push({ fn: 'launchManualDeduplication' });
+        return 'launch-result';
+      }
+    }
+  });
+
+  runFile('sheetInterface/Code.js', context);
+
+  assert.strictEqual(context.sanitizeBatchLimitValue(10), 'sanitized:10', 'le proxy doit déléguer à sheetConfig');
+  assert.deepStrictEqual(context.getConfiguredBatchLimit({ foo: 'bar' }), { config: { foo: 'bar' } });
+  assert.strictEqual(context.sanitizeTriggerFrequency('H24'), 'freq', 'la fréquence doit provenir de sheetTriggers');
+
+  assert.strictEqual(context.getOrCreateSubFolder('parent', 'Exports'), 'child-folder');
+  context.buildMediaDisplayName({ name: 'media' });
+  context.exportPdfBlob('Form', 'ID', {}, 'folder');
+  context.exportMedias([{ id: 'm' }], 'folder');
+
+  const mainResult = context.main({ origin: 'test' });
+  assert.strictEqual(mainResult, 'main-result', 'main doit déléguer à sheetPipeline');
+  assert.strictEqual(context.runBigQueryDeduplication(), 'dedup-result');
+  assert.strictEqual(context.launchManualDeduplication(), 'launch-result');
+
+  assert.ok(
+    pipelineCalls.some((entry) => entry.fn === 'main'),
+    'sheetPipeline.main doit être appelé via le proxy'
+  );
+  assert.ok(
+    driveCalls.some((entry) => entry.fn === 'exportPdfBlob'),
+    'SheetDriveExports.exportPdfBlob doit être invoqué via le proxy'
+  );
+}
+
+function testMajCodeDelegatesToPipeline() {
+  const driveCalls = [];
+  const pipelineCalls = [];
+  const context = createContext({
+    libKizeo: {
+      SheetDriveExports: {
+        getOrCreateSubFolder: (parent, name) => {
+          driveCalls.push({ fn: 'getOrCreateSubFolder', parent, name });
+          return 'child-folder';
+        },
+        buildMediaDisplayName: (media) => {
+          driveCalls.push({ fn: 'buildMediaDisplayName', media });
+          return 'display-name';
+        },
+        exportPdfBlob: () => driveCalls.push({ fn: 'exportPdfBlob' }),
+        exportMedias: () => driveCalls.push({ fn: 'exportMedias' })
+      },
+      ExternalListsService: {}
+    },
+    majConfig: {
+      sanitizeBatchLimitValue: (raw) => `maj:${raw}`,
+      getConfiguredBatchLimit: (config) => ({ config }),
+      sanitizeBooleanConfigFlag: () => 'flag',
+      readFormConfigFromSheet: () => 'read',
+      writeFormConfigToSheet: () => 'write',
+      resolveFormulaireContext: () => ({ sheet: true }),
+      createActionCode: () => 'maj-action',
+      validateFormConfig: () => ({ isValid: true, config: {} }),
+      notifyConfigErrors: () => 'notify',
+      getService: () => ({})
+    },
+    majTriggers: {
+      sanitizeTriggerFrequency: () => 'freq',
+      getTriggerOption: () => 'option',
+      describeTriggerOption: () => 'description',
+      configureTriggerFromKey: (key) => {
+        pipelineCalls.push({ fn: 'configureTriggerFromKey', key });
+        return { label: 'configured' };
+      },
+      parseCustomDailyHour: () => 11,
+      formatHourLabel: () => '11h00',
+      parseCustomWeekly: () => ({ dayCode: 'TUE', hour: 9 }),
+      formatWeekdayLabel: () => 'mardi',
+      getStoredTriggerFrequency: () => 'H24',
+      setStoredTriggerFrequency: (key) => {
+        pipelineCalls.push({ fn: 'setStoredTriggerFrequency', key });
+        return key;
+      },
+      persistTriggerFrequencyToSheet: (key) => pipelineCalls.push({ fn: 'persistTriggerFrequencyToSheet', key }),
+      getTriggerOptions: () => ({ H24: {} })
+    },
+    majPipeline: {
+      onOpen: () => {
+        pipelineCalls.push({ fn: 'onOpen' });
+        return 'open';
+      },
+      setScriptProperties: (etat) => {
+        pipelineCalls.push({ fn: 'setScriptProperties', etat });
+        return etat;
+      },
+      getEtatExecution: () => {
+        pipelineCalls.push({ fn: 'getEtatExecution' });
+        return 'etat';
+      },
+      initBigQueryConfigFromSheet: () => {
+        pipelineCalls.push({ fn: 'initBigQueryConfigFromSheet' });
+        return 'init';
+      },
+      main: (options) => {
+        pipelineCalls.push({ fn: 'main', options });
+        return 'main-result';
+      },
+      runBigQueryDeduplication: () => {
+        pipelineCalls.push({ fn: 'runBigQueryDeduplication' });
+        return 'dedup-result';
+      },
+      launchManualDeduplication: () => {
+        pipelineCalls.push({ fn: 'launchManualDeduplication' });
+        return 'launch-result';
+      }
+    }
+  });
+
+  runFile('MAJ Listes Externes/Code.js', context);
+
+  assert.strictEqual(context.sanitizeBatchLimitValue(5), 'maj:5');
+  assert.deepStrictEqual(context.getConfiguredBatchLimit({ foo: 'bar' }), { config: { foo: 'bar' } });
+  assert.strictEqual(context.sanitizeTriggerFrequency('H24'), 'freq');
+
+  context.exportMedias([{ id: 'm' }], 'folder');
+  context.exportPdfBlob('Form', 'ID', {}, 'folder');
+
+  const mainResult = context.main({ origin: 'test' });
+  assert.strictEqual(mainResult, 'main-result');
+  assert.strictEqual(context.runBigQueryDeduplication(), 'dedup-result');
+  assert.strictEqual(context.launchManualDeduplication(), 'launch-result');
+
+  assert.ok(
+    pipelineCalls.some((entry) => entry.fn === 'main'),
+    'majPipeline.main doit être appelé via le proxy'
+  );
+  assert.ok(
+    driveCalls.some((entry) => entry.fn === 'exportMedias'),
+    'SheetDriveExports.exportMedias doit être invoqué via le proxy MAJ'
+  );
+}
+
 const tests = [
   { name: 'FormResponseSnapshot utilise DriveMediaService', fn: testFormResponseSnapshotUsesDriveService },
   { name: 'createIngestionServices expose les services globaux', fn: testCreateIngestionServicesUsesGlobalFactories },
@@ -1075,7 +1378,11 @@ const tests = [
   { name: 'ingestResponsesBatch respecte les cibles BigQuery', fn: testIngestResponsesBatchSkipsBigQuery },
   { name: 'handleResponses propage le snapshot collecté', fn: testHandleResponsesPropagatesSnapshot },
   { name: 'finalizeIngestionRun marque les réponses et synchronise les listes', fn: testFinalizeIngestionRun },
-  { name: 'SheetDriveExports construit un nom de média stable', fn: testSheetDriveExportsBuildDisplayName }
+  { name: 'SheetDriveExports construit un nom de média stable', fn: testSheetDriveExportsBuildDisplayName },
+  { name: 'sheetInterface/Code expose directement la librairie', fn: testSheetInterfaceCodeDelegatesToPipeline },
+  { name: 'MAJ Listes Externes/Code expose directement la librairie', fn: testMajCodeDelegatesToPipeline },
+  { name: 'resolveFormulaireDepuisSheet gère nom et fallback (sheetInterface)', fn: testResolveFormulaireDepuisSheet },
+  { name: 'resolveFormulaireDepuisSheet gère nom et fallback (MAJ)', fn: testResolveFormulaireDepuisSheetMaj }
 ];
 
 let failures = 0;

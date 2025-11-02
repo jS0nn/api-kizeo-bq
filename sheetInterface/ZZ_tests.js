@@ -1,124 +1,124 @@
 
-function test() {
-  const spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
-  const onglets = spreadsheetBdD.getSheets();
-  //action : limite la portée de l'action markasread et unread à un spreadSheet : Attention si plusieurs fichiers sheet portent le meme nom !!!
-  let action=SpreadsheetApp.getActiveSpreadsheet().getName()
-  const onglet=spreadsheetBdD.getActiveSheet()
-  const ongletName = onglet.getName();
-  const ongletTabName = ongletName.split(' || ');
-  const formulaire = {
-    nom: ongletTabName[0],
-    id: ongletTabName[1]
-  };
-  if (ongletTabName.length < 3 && ongletTabName.length > 1) {
-    const lastRow=onglet.getLastRow()
-    let reponseAPIExports = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/exports`);
-    let exportId=reponseAPIExports.data.exports[0].id;
-    let reponseAPIlisteData = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/all`);
-    let dataId=reponseAPIlisteData.data.data[19].id;
-    
-    dataId=226762019		
-
-    let reponseAPIExportsData = libKizeo.requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/pdf`);
-    // Sauvegarde le blob d'image dans le dossier
-    let folderId="1tEyg0CoAa_KcscictxmgLSgTDwMXY13e"
-    let idFichier = libKizeo.DriveMediaService.getDefault().saveBlobToFolder(reponseAPIExportsData.data, folderId, "nomImage4");
-    //let reponseAPIExportsDataPDF = requeteAPIDonnees('GET', `/forms/${formulaire.id}/data/${dataId}/exports/${exportId}/pdf`);
-    let bp=0;
-  }
-
-  let bp=0
-}
-
-
-
 /**
- * Envoie une requête HTTP à l'API Kizeo et renvoie la réponse.
- *
- * @param {string} methode - La méthode HTTP à utiliser pour la requête.
- * @param {string} type - Le chemin d'accès à l'API.
- * @param {Object} donnees - Les données à inclure dans le corps de la requête (optionnel).
- * @return {Object} Un objet contenant les données de réponse et le code de statut HTTP.
+ * Harness manuel pour vérifier l’intégration sans passer par une façade locale.
+ * Renseigner les identifiants nécessaires ci-dessous. Sans configuration explicite,
+ * le dossier parent du script (ou du classeur actif pour un script lié) est utilisé.
+ * Si aucun dossier n’est fourni, le parent du classeur actif sera utilisé.
  */
-function requeteAPIDonneesExport(methode, type) {
-  let ssToken=SpreadsheetApp.openById('1CtkKyPck3rZ97AbRevzNGiRojranofxMz28zmtSP4LI')
-  let tokenKizeo=ssToken.getSheetByName('token').getRange(1, 1,).getValue();
-  
-  // Prépare les paramètres de la requête
+var MANUAL_TEST_CONFIG = Object.freeze({
+  driveFolderId: ''
+});
 
-  const settings = {
-    'async': true,
-    'crossDomain': true,
-    'method': methode,
-    'headers': {
-      "accept": "application/pdf",
-      'Content-Type': 'application/json',
-      'Authorization': tokenKizeo,
-      'cache-control': 'no-cache',
-    },
-    'muteHttpExceptions': true,
-  };
-
-  let reponse;
-  let data;
-  let contentType;
-  let responseCode;
-
-  // Exécute la requête et gère les erreurs
+var DEFAULT_DRIVE_EXPORT_FOLDER_ID = (function () {
   try {
-    let adresse='https://forms.kizeo.com/rest/v3'+type
-    reponse = UrlFetchApp.fetch(adresse, settings);
-    responseCode = reponse.getResponseCode();
-    contentType = reponse.getHeaders()['Content-Type'];
-
-    if (responseCode < 200 || responseCode >= 300) {
-      throw new Error(`Erreur HTTP: ${responseCode}`);
+    var scriptFile = DriveApp.getFileById(ScriptApp.getScriptId());
+    var parents = scriptFile.getParents();
+    if (parents.hasNext()) {
+      return parents.next().getId();
     }
-  } catch (e) {
-    // Loggue l'erreur et envoie un e-mail
-    let context = {
-      'methode': methode,
-      'type': type
-      }; 
-    libKizeo.handleException('requeteApiDonnees', e, context)
-    return {'data': data, 'responseCode': responseCode};;
+  } catch (scriptError) {
+    Logger.log('DEFAULT_DRIVE_EXPORT_FOLDER_ID (script) -> ' + scriptError);
+  }
+  try {
+    var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    if (spreadsheet) {
+      var file = DriveApp.getFileById(spreadsheet.getId());
+      var sheetParents = file.getParents();
+      if (sheetParents.hasNext()) {
+        return sheetParents.next().getId();
+      }
+      return file.getId();
+    }
+  } catch (sheetError) {
+    Logger.log('DEFAULT_DRIVE_EXPORT_FOLDER_ID (sheet) -> ' + sheetError);
+  }
+  return '';
+})();
+
+function zzDescribeScenarioDriveExport() {
+  if (typeof libKizeo === 'undefined' || libKizeo === null) {
+    throw new Error('libKizeo requis pour zzDescribeScenarioDriveExport.');
   }
 
-  // Traite la réponse en fonction de son type de contenu
-  if (contentType === 'image/jpeg' || contentType === 'image/png' || contentType === 'application/pdf' ) {
-    data = reponse.getBlob();
-  } else if (contentType === 'application/json') {
-    try {
-      const json = reponse.getContentText();
-      data = JSON.parse(json);
-    } catch (e) {
-      libKizeo.handleException('requeteApiDonnees Analyse JSON', e)
-    }
+  var spreadsheetBdD = SpreadsheetApp.getActiveSpreadsheet();
+  if (!spreadsheetBdD) {
+    throw new Error('Aucun classeur actif pour déterminer le formulaire.');
+  }
+  var activeSheet = spreadsheetBdD.getActiveSheet();
+  if (!activeSheet) {
+    throw new Error('Aucun onglet actif pour déterminer le formulaire.');
+  }
+  var formulaire = resolveFormulaireDepuisSheet(activeSheet);
+  if (!formulaire || !formulaire.id) {
+    throw new Error(
+      "Impossible de déterminer le formulaire. Vérifiez la configuration (nom d'onglet « Nom || ID » ou feuille Config renseignée)."
+    );
   }
 
-  return {'data': data, 'responseCode': responseCode};
+  var exportsResponse = libKizeo.requeteAPIDonnees('GET', '/forms/' + formulaire.id + '/exports');
+  var exportsList = exportsResponse && exportsResponse.data && exportsResponse.data.exports;
+  if (!exportsList || !exportsList.length) {
+    return { status: 'NO_EXPORT', message: 'Aucun export disponible pour ce formulaire.' };
+  }
+
+  var dataResponse = libKizeo.requeteAPIDonnees('GET', '/forms/' + formulaire.id + '/data/all');
+  var dataList = dataResponse && dataResponse.data && dataResponse.data.data;
+  if (!dataList || !dataList.length) {
+    return { status: 'NO_DATA', message: 'Aucune donnée disponible pour ce formulaire.' };
+  }
+
+  var firstData = dataList[0];
+  var pdfResponse = libKizeo.requeteAPIDonnees('GET', '/forms/' + formulaire.id + '/data/' + firstData.id + '/pdf');
+  if (!pdfResponse || !pdfResponse.data) {
+    return { status: 'PDF_MISSING', message: 'PDF introuvable pour la réponse testée.' };
+  }
+
+  var driveService = libKizeo.DriveMediaService.getDefault();
+  if (!driveService || typeof driveService.saveBlobToFolder !== 'function') {
+    throw new Error('DriveMediaService indisponible pour zzDescribeScenarioDriveExport.');
+  }
+
+  var targetFolderId =
+    (MANUAL_TEST_CONFIG && MANUAL_TEST_CONFIG.driveFolderId) || DEFAULT_DRIVE_EXPORT_FOLDER_ID;
+  if (!targetFolderId) {
+    throw new Error(
+      "Impossible de déterminer un dossier Drive cible. Fournissez MANUAL_TEST_CONFIG.driveFolderId ou placez le classeur/la bibliothèque dans un dossier Drive."
+    );
+  }
+
+  var savedFileId = driveService.saveBlobToFolder(
+    pdfResponse.data,
+    targetFolderId,
+    formulaire.nom + '_' + firstData.id + '_manual.pdf'
+  );
+
+  return {
+    status: 'DONE',
+    exportCount: exportsList.length,
+    savedFileId: savedFileId || null
+  };
 }
-/**    DOC :
-  https://www.kizeoforms.com/doc/swagger/v3/#/
-    types GET: 
-      /users : get all users
-      /forms : list all forms
-      /forms/{formId} : Get form definition
-      /forms/{formId}/data : Get the list of all data of a form (not read)
-      /forms/{formId}/data/all :Get the list of all data of a form
-      /forms/{formId}/data/readnew : Get content of unread data
-      /forms/{formId}/data/{dataId} : Get data of a form
-      /forms/push/inbox : Receive new pushed data
-      /forms/{formId}/data/{dataId}/pdf : Get PDF data of a form
-      /forms/{formId}/exports : Get list of Word and Excel exports
-      /forms/{formId}/data/{dataId}/exports/{exportId} : Export data
-      /forms/{formId}/data/{dataId}/exports/{exportId}/pdf : Export data (PDF)
-      /lists : Get External Lists
-      /lists/{listId} : Get External List Definition
-      /lists/{listId}/complete : Get External List Definition (Without taking in account filters)
-      groups...
-  */
+
+function resolveFormulaireDepuisSheet(sheet) {
+  if (!sheet) {
+    return null;
+  }
+  var nameParts = sheet.getName().split(' || ');
+  if (nameParts.length >= 2) {
+    return { nom: nameParts[0], id: nameParts[1] };
+  }
+  try {
+    if (typeof sheetConfig !== 'undefined' && sheetConfig && sheetConfig.readFormConfigFromSheet) {
+      var existingConfig = sheetConfig.readFormConfigFromSheet(sheet) || {};
+      if (existingConfig.form_id && existingConfig.form_name) {
+        return { nom: existingConfig.form_name, id: existingConfig.form_id };
+      }
+    }
+  } catch (configError) {
+    Logger.log('resolveFormulaireDepuisSheet -> ' + configError);
+  }
+  return null;
+}
 
 function zzDescribeScenarioSheetInterface() {
   if (typeof libKizeo === 'undefined') {
