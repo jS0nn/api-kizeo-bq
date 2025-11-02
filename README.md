@@ -45,7 +45,7 @@
 │   ├── zz_Tests.js          # Scénarios exploratoires ou de test manuel
 │   └── appsscript.json      # Manifest Apps Script de la librairie
 ├── sheetInterface/     # Script lié au classeur et assets HtmlService
-│   ├── Code.js         # Menus, triggers, orchestrateur `main`
+│   ├── Code.js         # Menus, triggers, délégation directe vers `libKizeo.*`
 │   ├── UI.js           # Logique UI (modales, sélection formulaire)
 │   ├── outils.js       # Utilitaires communs côté sheet
 │   ├── timeIntervalSelector.html # Dialogue de fréquence

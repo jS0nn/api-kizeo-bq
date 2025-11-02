@@ -52,3 +52,13 @@
 - Fonctions : `node tests/run-tests.js`.
 - Résultat : ✅ `Tous les tests sont passés.` (nouvelle couverture `getLibPublicApi fige l’API exposée`).
 - Observations : `lib/zz_PublicApi.js` construit l’objet figé à partir de `LIB_PUBLIC_SYMBOLS`; suppression des exports `this.*` et extraction des helpers sous-formulaire vers `lib/process/subforms.js`.
+
+## 2025-11-03 — Validation post-simplification (appels directs)
+- Fonctions : `main`, `majSheet`, `runBigQueryDeduplication` exécutées via `clasp run` après `clasp push` sur `lib/`, `sheetInterface/` et `MAJ Listes Externes/`.
+- Résultat :
+  - ✅ `main` — ingestion complète (logs `lib:ProcessManager`, marquage mark-as-read OK).
+  - ✅ `majSheet` — relance menu sans blocage, notification d’exécution en cours conforme.
+  - ✅ `runBigQueryDeduplication` — déduplication parent/tables filles terminée, aucun run ignoré.
+- Observations :
+  - Aucun wrapper `SheetAppBindings` restant ; appels Drive délégués à `libKizeo.SheetDriveExports`.
+  - Les menus et toasts utilisent toujours `SheetInterfaceHelpers`; aucun diff non prévu sur les propriétés du script.

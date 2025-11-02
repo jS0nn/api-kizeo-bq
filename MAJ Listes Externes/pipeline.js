@@ -1,4 +1,4 @@
-// pipeline Version 0.1.0
+// pipeline Version 0.2.0
 
 var majPipeline =
   typeof majPipeline !== 'undefined'
@@ -41,6 +41,11 @@ var majPipeline =
         var ensureBigQueryCoreTables = libKizeo.ensureBigQueryCoreTables;
         if (typeof ensureBigQueryCoreTables !== 'function') {
           throw new Error('ensureBigQueryCoreTables indisponible via libKizeo');
+        }
+
+        var sheetDriveExports = libKizeo.SheetDriveExports || null;
+        if (!sheetDriveExports) {
+          throw new Error('SheetDriveExports indisponible via libKizeo');
         }
 
         function onOpen() {
@@ -146,14 +151,14 @@ var majPipeline =
           }
           if (ingestFlag !== 'false' && summary.medias && summary.medias.length && context.config.driveFolderId) {
             try {
-              majExports.exportMedias(summary.medias, context.config.driveFolderId);
+              sheetDriveExports.exportMedias(summary.medias, context.config.driveFolderId);
             } catch (mediaError) {
               reportException('main.exportMedias', mediaError);
             }
           }
           if (summary.pdf && context.config.driveFolderId) {
             try {
-              majExports.exportPdfBlob(
+              sheetDriveExports.exportPdfBlob(
                 formulaire.nom,
                 summary.pdf.dataId,
                 summary.pdf.blob,

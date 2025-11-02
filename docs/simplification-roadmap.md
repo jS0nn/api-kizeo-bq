@@ -13,8 +13,8 @@
 - [x] Remplacer le `persistSnapshot` neutre par une implémentation documentée (ou retirer l’API si inutile).
 
 ### 2. Harmonisation scripts Sheets
-- [x] Introduire un module commun (ex. `SheetAppBindings`) exposant les fonctions partagées.
-- [x] Réduire `Code.js` à une simple table de routage vers ce module.
+- [x] Introduire un module commun (ex. `SheetAppBindings`) exposant les fonctions partagées *(déployé en 2025 puis retiré au profit d’appels directs)*.
+- [x] Simplifier `Code.js` et `MAJ Listes Externes/Code.js` pour déléguer directement vers `libKizeo.*` sans façade intermédiaire.
 - [x] Aligner `MAJ Listes Externes` sur les garde-fous récents (`etatExecution`, notifications).
 
 ### 3. Orchestration & tests
