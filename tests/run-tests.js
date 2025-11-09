@@ -25,13 +25,44 @@ function createContext(additionalGlobals = {}) {
     Array,
     Set,
     Map,
+    Intl,
     parseFloat,
     parseInt,
     isNaN,
     encodeURIComponent,
     decodeURIComponent,
     Utilities: {
-      sleep: () => {}
+      sleep: () => {},
+      formatDate: (dateInput, timeZone, pattern) => {
+        const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+        if (isNaN(date.getTime())) {
+          throw new Error('Invalid date provided to Utilities.formatDate');
+        }
+        const tz = timeZone || 'UTC';
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        const parts = formatter.formatToParts(date).reduce((acc, part) => {
+          acc[part.type] = part.value;
+          return acc;
+        }, {});
+        const tokens = {
+          yyyy: parts.year,
+          MM: parts.month,
+          dd: parts.day,
+          HH: parts.hour,
+          mm: parts.minute,
+          ss: parts.second
+        };
+        return pattern.replace(/yyyy|MM|dd|HH|mm|ss/g, (token) => tokens[token] || token);
+      }
     }
   };
   return vm.createContext(Object.assign(base, additionalGlobals));
