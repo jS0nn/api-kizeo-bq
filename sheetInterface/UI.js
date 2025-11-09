@@ -120,6 +120,18 @@ function chargelisteFormulaires() {
   }
 }
 
+function describeBigQueryTableStatus(options) {
+  if (!sheetInterfaceHelpers || typeof sheetInterfaceHelpers.describeBigQueryTableStatus !== 'function') {
+    throw new Error('SheetInterfaceHelpers.describeBigQueryTableStatus indisponible.');
+  }
+  const request = options || {};
+  return sheetInterfaceHelpers.describeBigQueryTableStatus({
+    tableName: request.tableName || '',
+    formId: request.formId || '',
+    formName: request.formName || ''
+  });
+}
+
 /**
  * Enregistre les données du formulaire dans la feuille de calcul.
  * 

@@ -15,6 +15,38 @@
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
+    <style>
+      .existing-table-modal .modal-dialog {
+        max-width: 520px;
+      }
+
+      .existing-table-modal .modal-title,
+      .existing-table-modal .modal-table-label {
+        font-size: 1rem;
+        font-weight: 600;
+        line-height: 1.4;
+        margin-bottom: 0;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+      }
+
+      .existing-table-modal .modal-table-meta {
+        font-size: 0.85rem;
+        color: #5f6368;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+      }
+
+      .existing-table-modal .modal-body ul {
+        padding-left: 1.2rem;
+        margin-bottom: 0;
+      }
+
+      .existing-table-modal .modal-body li + li {
+        margin-top: 0.25rem;
+      }
+    </style>
+
     <title>KIZEOFORM</title>
   </head>
   <body>
@@ -52,6 +84,36 @@
         </div>
       </div>
     </div>
+
+    <div class="modal fade existing-table-modal" id="bqTableExistsModal" tabindex="-1" aria-hidden="true" aria-labelledby="bqExistingTableLabel">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow">
+          <div class="modal-header border-0 pb-0">
+            <div>
+              <p class="text-muted text-uppercase small mb-1">Table déjà provisionnée</p>
+              <h5 class="modal-title modal-table-label" id="bqExistingTableLabel"></h5>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-table-meta mb-3" id="bqExistingTableDataset"></p>
+            <div class="alert alert-warning" role="alert">
+              <p class="fw-bold mb-2">Cette table existe déjà dans BigQuery.</p>
+              <ul class="mb-0 ps-3">
+                <li>Une nouvelle action sera créée pour ce formulaire.</li>
+                <li>La configuration précédente sera remplacée et la table existante sera effacée.</li>
+                <li>Risque de doublon si un autre classeur utilise encore cette table.</li>
+              </ul>
+            </div>
+            <p class="small mb-0 text-muted">Confirmez uniquement si vous souhaitez réutiliser cette table malgré ces impacts.</p>
+          </div>
+          <div class="modal-footer border-0 pt-0">
+            <button type="button" class="btn btn-outline-secondary" id="bqExistingTableCancel" data-bs-dismiss="modal">Annuler</button>
+            <button type="button" class="btn btn-primary" id="bqExistingTableConfirm">Réutiliser cette table</button>
+          </div>
+        </div>
+      </div>
+    </div>
     
 
     <!-- Optional JavaScript-->
@@ -68,6 +130,19 @@
 
       const selectForm = document.getElementById('selectForm');
       const tableNameInput = document.getElementById('bqTableName');
+      const submitButton = document.getElementById('boutonEnvoiFormulaireVariables');
+      const existingTableModalEl = document.getElementById('bqTableExistsModal');
+      const existingTableLabel = document.getElementById('bqExistingTableLabel');
+      const existingTableDataset = document.getElementById('bqExistingTableDataset');
+      const existingTableConfirmBtn = document.getElementById('bqExistingTableConfirm');
+      const existingTableCancelBtn = document.getElementById('bqExistingTableCancel');
+      const BootstrapModal = typeof bootstrap !== 'undefined' && bootstrap && typeof bootstrap.Modal === 'function'
+        ? bootstrap.Modal
+        : null;
+      const existingTableModalInstance = existingTableModalEl && BootstrapModal
+        ? new BootstrapModal(existingTableModalEl, { backdrop: 'static', keyboard: false })
+        : null;
+      let pendingTableModalResolver = null;
       const MAX_TABLE_NAME_LENGTH = 128;
       const BQ_TABLE_PART_SEPARATOR = '__';
 
@@ -139,10 +214,120 @@
         tableNameInput.classList.remove('is-invalid');
 
         // Désactiver le bouton pour éviter les clics multiples
-        document.getElementById("boutonEnvoiFormulaireVariables").disabled = true;
+        submitButton.disabled = true;
 
         const aliasPart = extractAliasPart(formulaireID, finalTableName);
         var formulaireObj = {id: formulaireID, nom: formulaire, tableName: finalTableName, alias: aliasPart};
+        verifyBigQueryTableBeforeSave(formulaireObj);
+      }
+
+      function verifyBigQueryTableBeforeSave(formulaireObj) {
+        google.script.run
+          .withSuccessHandler(function(status) {
+            evaluateTableStatus(status)
+              .then(function(proceed) {
+                if (!proceed) {
+                  window.alert("Configuration annulée. Aucun changement n'a été appliqué.");
+                  submitButton.disabled = false;
+                  return;
+                }
+                proceedWithFormSave(formulaireObj);
+              })
+              .catch(function(errorMessage) {
+                if (errorMessage) {
+                  window.alert(errorMessage);
+                }
+                submitButton.disabled = false;
+              });
+          })
+          .withFailureHandler(function(error) {
+            console.error("Erreur lors de la vérification BigQuery:", error);
+            window.alert("Impossible de vérifier la présence de la table BigQuery. Réessayez plus tard.");
+            submitButton.disabled = false;
+          })
+          .describeBigQueryTableStatus({
+            tableName: formulaireObj.tableName,
+            formId: formulaireObj.id,
+            formName: formulaireObj.nom
+          });
+      }
+
+      function evaluateTableStatus(status) {
+        return new Promise(function(resolve, reject) {
+          if (!status) {
+            reject("Vérification BigQuery indisponible. Configuration interrompue.");
+            return;
+          }
+          if (status.error && !status.checkSkipped) {
+            reject("Erreur lors de la vérification BigQuery : " + status.error);
+            return;
+          }
+          if (status.checkSkipped) {
+            console.warn("Vérification BigQuery non effectuée :", status.skipReason || "motif inconnu");
+            resolve(true);
+            return;
+          }
+          if (status.exists) {
+            showExistingTableModal(status).then(resolve);
+            return;
+          }
+          resolve(true);
+        });
+      }
+
+      function showExistingTableModal(status) {
+        if (!existingTableModalInstance || !existingTableLabel || !existingTableConfirmBtn) {
+          const fallbackMessage =
+            `La table BigQuery « ${status.fullTableId || status.tableName} » existe déjà.\n` +
+            "Continuer va remplacer la configuration précédente et effacer la table actuelle.\n" +
+            "OK : réutiliser cette table • Annuler : interrompre l'enregistrement.";
+          const decision = window.confirm(fallbackMessage);
+          return Promise.resolve(decision);
+        }
+
+        existingTableLabel.textContent = status.fullTableId || status.tableName;
+        if (existingTableDataset) {
+          const project = status.projectId || 'Projet non défini';
+          const dataset = status.datasetId || 'Dataset non défini';
+          existingTableDataset.textContent = `Projet : ${project} • Dataset : ${dataset}`;
+        }
+
+        return new Promise(function(resolve) {
+          pendingTableModalResolver = resolve;
+          existingTableModalInstance.show();
+        });
+      }
+
+      function resolveExistingTableModal(decision) {
+        if (pendingTableModalResolver) {
+          var resolver = pendingTableModalResolver;
+          pendingTableModalResolver = null;
+          resolver(Boolean(decision));
+        }
+      }
+
+      if (existingTableConfirmBtn) {
+        existingTableConfirmBtn.addEventListener('click', function() {
+          if (existingTableModalInstance) {
+            existingTableModalInstance.hide();
+          }
+          resolveExistingTableModal(true);
+        });
+      }
+
+      if (existingTableCancelBtn) {
+        existingTableCancelBtn.addEventListener('click', function() {
+          resolveExistingTableModal(false);
+        });
+      }
+
+      if (existingTableModalEl) {
+        existingTableModalEl.addEventListener('hidden.bs.modal', function() {
+          resolveExistingTableModal(false);
+        });
+      }
+
+      function proceedWithFormSave(formulaireObj) {
         google.script.run
           .withSuccessHandler(function() {
             google.script.run
@@ -167,7 +352,7 @@
             } else {
               window.alert("Impossible de finaliser l'enregistrement. Consultez les journaux pour plus de détails.");
             }
-            document.getElementById("boutonEnvoiFormulaireVariables").disabled = false;
+            submitButton.disabled = false;
           })
           .enregistrementUI(formulaireObj);
       }
