@@ -81,6 +81,40 @@ function loadProcessManagerModules(context) {
   runFile('lib/ProcessManager.js', context);
 }
 
+function buildBigQueryEnsureContext(existingFields, patchCalls, insertCalls) {
+  return createContext({
+    BigQuery: {
+      Tables: {
+        get: () => ({
+          schema: { fields: existingFields.map((field) => Object.assign({}, field)) }
+        }),
+        patch: (payload, projectId, datasetId, tableId) => {
+          patchCalls.push({ payload, projectId, datasetId, tableId });
+          return {};
+        },
+        insert: (...args) => {
+          insertCalls.push(args);
+          return {};
+        }
+      },
+      Datasets: {
+        get: () => ({}),
+        insert: () => ({})
+      }
+    },
+    PropertiesService: {
+      getDocumentProperties: () => ({
+        getProperty: () => null,
+        setProperties: () => {}
+      }),
+      getScriptProperties: () => ({
+        getProperty: () => null,
+        setProperties: () => {}
+      })
+    }
+  });
+}
+
 function buildPublicApiContext(overrides = {}) {
   const functionStubs = {
     handleException: function handleException() {},
@@ -190,6 +224,163 @@ function testFormResponseSnapshotUsesDriveService() {
       snapshot.rowEnCours.some((value) => typeof value === 'string' && value.includes('HYPERLINK')),
     'le snapshot doit contenir la formule Drive'
   );
+}
+
+function testFormResponseSnapshotCollectsSubformMedias() {
+  const driveService = {
+    calls: [],
+    processField(formId, dataId, fieldName, rawValue) {
+      this.calls.push({ formId, dataId, fieldName, rawValue });
+      const ids = String(rawValue)
+        .split(/,\s*/)
+        .filter((value) => value);
+      return {
+        formula: `=HYPERLINK("https://drive.example/${fieldName}","media")`,
+        files: ids.map((id) => ({
+          mediaId: id,
+          fileName: `${fieldName}-${id}`,
+          fileId: `${fieldName}-${id}`,
+          driveUrl: `https://drive.example/${id}`,
+          driveViewUrl: `https://drive.example/${id}/view`,
+          drivePublicUrl: '',
+          folderId: `folder-${fieldName}`,
+          folderUrl: `https://drive.example/folder/${fieldName}`
+        }))
+      };
+    },
+    normalizeDrivePublicUrl(url) {
+      return `public:${url}`;
+    }
+  };
+
+  const mediasCollector = [];
+  const subformRows = [
+    {
+      photo_child: { type: 'photo', value: 'MEDIA-A' },
+      notes: { type: 'text', value: 'RAS' }
+    },
+    {
+      photo_child: { type: 'photo', value: ['MEDIA-B', 'MEDIA-C'] }
+    }
+  ];
+
+  const context = createContext({
+    DriveMediaService: {
+      getDefault: () => driveService
+    },
+    handleException: () => {},
+    isNumeric: (value) => !Number.isNaN(Number(value)),
+    normalizeSubformRows: () => subformRows,
+    isSubformField: (type) => type === 'table',
+    getSubformRowSources: (rawValue) =>
+      rawValue.map((row, index) => ({ index, source: row })),
+    formSnapshotLegacyLog: () => {}
+  });
+
+  runFile('lib/FormResponseSnapshot.js', context);
+
+  const snapshot = context.FormResponseSnapshot.buildRowSnapshot(
+    { getId: () => 'SPREAD' },
+    { id: 'FORM-1', nom: 'Formulaire Test' },
+    {
+      id: 'REC-1',
+      form_id: 'FORM-1',
+      form_unique_id: 'FORM-1::REC-1',
+      fields: {
+        tableau_media: { type: 'table', value: subformRows }
+      }
+    },
+    mediasCollector
+  );
+
+  assert.ok(snapshot, 'un snapshot doit être produit');
+  assert.strictEqual(
+    driveService.calls.length,
+    2,
+    'processField doit être invoqué pour chaque ligne contenant un média'
+  );
+  assert.strictEqual(mediasCollector.length, 3, 'tous les médias doivent être collectés');
+  assert.ok(
+    mediasCollector.some((media) => media.fieldName === 'tableau_media[1].photo_child'),
+    'les noms de champs doivent inclure l’index de la ligne'
+  );
+}
+
+function testGetSubformRowSourcesProvidesRowIndex() {
+  const context = createContext({});
+  runFile('lib/process/subforms.js', context);
+
+  const rawValue = {
+    rows: [
+      {
+        fields: {
+          photo: { value: 'MEDIA-1', type: 'photo' },
+          text: { value: 'OK', type: 'text' }
+        }
+      },
+      {
+        fields: {
+          signature: { value: 'SIG-1', type: 'signature' }
+        }
+      }
+    ]
+  };
+
+  const sources = context.getSubformRowSources(rawValue);
+  assert.strictEqual(sources.length, 2, 'les deux lignes doivent être détectées');
+  assert.deepStrictEqual(
+    Object.keys(sources[0].source).sort(),
+    ['photo', 'text'],
+    'les champs doivent être exposés'
+  );
+
+  const normalized = JSON.parse(JSON.stringify(context.normalizeSubformRows(rawValue)));
+  assert.deepStrictEqual(normalized, [
+    { photo: 'MEDIA-1', text: 'OK' },
+    { signature: 'SIG-1' }
+  ]);
+}
+
+function testBqEnsureParentTableAddsMissingColumns() {
+  const patchCalls = [];
+  const insertCalls = [];
+  const existingFields = [{ name: 'form_id' }, { name: 'data_id' }];
+  const context = buildBigQueryEnsureContext(existingFields, patchCalls, insertCalls);
+  runFile('lib/bigquery/ingestion.js', context);
+
+  const config = { projectId: 'proj', datasetId: 'ds' };
+  context.bqEnsureParentTable(config, 'form_table');
+
+  assert.strictEqual(insertCalls.length, 0, 'aucune création de table ne doit être nécessaire');
+  assert.strictEqual(
+    patchCalls.length,
+    1,
+    'le schéma existant doit être patché pour ajouter les colonnes manquantes'
+  );
+  const columns = patchCalls[0].payload.schema.fields.map((field) => field.name);
+  assert.ok(columns.includes('ingestion_time_cet'), 'ingestion_time_cet doit être ajouté');
+  assert.ok(columns.includes('update_time_cet'), 'update_time_cet doit être ajouté');
+}
+
+function testBqEnsureSubTableAddsMissingColumns() {
+  const patchCalls = [];
+  const insertCalls = [];
+  const existingFields = [{ name: 'form_id' }, { name: 'parent_data_id' }];
+  const context = buildBigQueryEnsureContext(existingFields, patchCalls, insertCalls);
+  runFile('lib/bigquery/ingestion.js', context);
+
+  const config = { projectId: 'proj', datasetId: 'ds' };
+  context.bqEnsureSubTable(config, 'form_table__sub');
+
+  assert.strictEqual(insertCalls.length, 0, 'aucune création de table fille ne doit être nécessaire');
+  assert.strictEqual(
+    patchCalls.length,
+    1,
+    'le schéma existant doit être patché pour les colonnes manquantes'
+  );
+  const columns = patchCalls[0].payload.schema.fields.map((field) => field.name);
+  assert.ok(columns.includes('parent_update_time_cet'), 'parent_update_time_cet doit être ajouté');
+  assert.ok(columns.includes('ingestion_time_cet'), 'ingestion_time_cet doit être ajouté');
 }
 
 function testCreateIngestionServicesUsesGlobalFactories() {
@@ -1394,6 +1585,10 @@ function testMajCodeDelegatesToPipeline() {
 
 const tests = [
   { name: 'FormResponseSnapshot utilise DriveMediaService', fn: testFormResponseSnapshotUsesDriveService },
+  { name: 'FormResponseSnapshot collecte les médias des sous-formulaires', fn: testFormResponseSnapshotCollectsSubformMedias },
+  { name: 'SubformUtils expose les sources des lignes', fn: testGetSubformRowSourcesProvidesRowIndex },
+  { name: 'bqEnsureParentTable ajoute les colonnes manquantes', fn: testBqEnsureParentTableAddsMissingColumns },
+  { name: 'bqEnsureSubTable ajoute les colonnes manquantes', fn: testBqEnsureSubTableAddsMissingColumns },
   { name: 'createIngestionServices expose les services globaux', fn: testCreateIngestionServicesUsesGlobalFactories },
   { name: 'collectResponseArtifacts fonctionne sans legacy Sheets', fn: testCollectResponseArtifactsWithoutLegacySheetSync },
   { name: 'collectMediasForRecord exploite le snapshot', fn: testCollectMediasForRecordUsesSnapshotService },
