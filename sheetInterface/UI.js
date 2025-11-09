@@ -32,6 +32,11 @@ if (typeof ensureBigQueryCoreTables !== 'function') {
   throw new Error('ensureBigQueryCoreTables indisponible via libKizeo');
 }
 
+var deleteFormTables = libKizeo.bqDeleteFormTables;
+if (typeof deleteFormTables !== 'function') {
+  throw new Error('bqDeleteFormTables indisponible via libKizeo');
+}
+
 /**
  * Crée un menu personnalisé dans la feuille de calcul active et ajoute des éléments avec des actions correspondantes.
  * 
@@ -130,6 +135,29 @@ function describeBigQueryTableStatus(options) {
     formId: request.formId || '',
     formName: request.formName || ''
   });
+}
+
+function deleteExistingBigQueryTables(options) {
+  if (typeof deleteFormTables !== 'function') {
+    throw new Error('bqDeleteFormTables indisponible via libKizeo');
+  }
+  const request = options || {};
+  const formId = request.id || request.formId;
+  const formName = request.nom || request.formName || '';
+  const tableName = request.tableName || '';
+
+  if (!formId || !tableName) {
+    throw new Error('Paramètres insuffisants pour supprimer la table BigQuery.');
+  }
+
+  const formulaire = {
+    id: formId,
+    nom: formName,
+    tableName: tableName,
+    alias: request.alias || ''
+  };
+
+  return deleteFormTables(formulaire, { parentTableId: tableName });
 }
 
 /**

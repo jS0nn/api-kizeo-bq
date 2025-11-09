@@ -225,13 +225,27 @@
         google.script.run
           .withSuccessHandler(function(status) {
             evaluateTableStatus(status)
-              .then(function(proceed) {
-                if (!proceed) {
+              .then(function(decision) {
+                if (!decision || !decision.proceed) {
                   window.alert("Configuration annulée. Aucun changement n'a été appliqué.");
                   submitButton.disabled = false;
                   return;
                 }
-                proceedWithFormSave(formulaireObj);
+                var cleanupPromise = decision.shouldCleanup
+                  ? deleteBigQueryTablesForForm(formulaireObj)
+                  : Promise.resolve();
+                cleanupPromise
+                  .then(function() {
+                    proceedWithFormSave(formulaireObj);
+                  })
+                  .catch(function(errorMessage) {
+                    if (errorMessage) {
+                      window.alert(errorMessage);
+                    } else {
+                      window.alert("Suppression BigQuery impossible. Configuration interrompue.");
+                    }
+                    submitButton.disabled = false;
+                  });
               })
               .catch(function(errorMessage) {
                 if (errorMessage) {
@@ -264,14 +278,20 @@
           }
           if (status.checkSkipped) {
             console.warn("Vérification BigQuery non effectuée :", status.skipReason || "motif inconnu");
-            resolve(true);
+            resolve({ proceed: true, shouldCleanup: false, status: status });
             return;
           }
           if (status.exists) {
-            showExistingTableModal(status).then(resolve);
+            showExistingTableModal(status).then(function(confirmation) {
+              resolve({
+                proceed: Boolean(confirmation),
+                shouldCleanup: Boolean(confirmation),
+                status: status
+              });
+            });
             return;
           }
-          resolve(true);
+          resolve({ proceed: true, shouldCleanup: false, status: status });
         });
       }
 
@@ -295,6 +315,30 @@
         return new Promise(function(resolve) {
           pendingTableModalResolver = resolve;
           existingTableModalInstance.show();
+        });
+      }
+
+      function deleteBigQueryTablesForForm(formulaireObj) {
+        return new Promise(function(resolve, reject) {
+          google.script.run
+            .withSuccessHandler(function(response) {
+              console.log("Suppressions BigQuery effectuées:", response);
+              resolve(response);
+            })
+            .withFailureHandler(function(error) {
+              console.error("Suppression BigQuery impossible:", error);
+              reject(
+                error && error.message
+                  ? "Suppression BigQuery impossible : " + error.message
+                  : "Suppression BigQuery impossible. Consultez les journaux."
+              );
+            })
+            .deleteExistingBigQueryTables({
+              id: formulaireObj.id,
+              nom: formulaireObj.nom,
+              tableName: formulaireObj.tableName,
+              alias: formulaireObj.alias
+            });
         });
       }
 
